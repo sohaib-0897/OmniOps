@@ -550,6 +550,15 @@ class DurablePlanExecutor:
                     attempt.retryable = True
                     await self.db.flush()
                     return ObservationDecision.FAIL
+                # Promote only explicitly structured, lineage-bearing outputs;
+                # arbitrary tool text never becomes evidence or a claim.
+                from app.agent.persistence import persist_tool_domain_outputs
+                await persist_tool_domain_outputs(
+                    self.db,
+                    investigation=investigation,
+                    step_id=spec.step_id,
+                    result=result,
+                )
                 outputs[spec.step_id] = result
                 attempt.status = "COMPLETED"
                 attempt.completed_at = datetime.now(timezone.utc)

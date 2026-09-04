@@ -329,3 +329,7 @@ Combined Phase 3 closure/runtime regression: **27 passed, 0 failed**. Full backe
 Frontend verification: TypeScript PASS, lint PASS, production build PASS. Backend compileall PASS. Alembic current head `20260910_phase38_replan`; live `upgrade head` exited 0. Docker Compose PostgreSQL healthy, backend and frontend running, `/api/v1/health` and `/` both returned HTTP 200. Root `.dockerignore` excludes generated dependencies, build output, caches, logs, local databases, and storage artifacts.
 
 Phase 2 semantic retrieval evaluation remains intentionally `BLOCKED — configured semantic embedding path requires unavailable OPENAI_API_KEY`; this does not block Phase 3.
+
+The crash-recovery fixture was extended to return explicitly lineage-bearing `evidence` and `claims`. `persist_tool_domain_outputs` promotes only those structured records after the ownership fence and validates claim support; the live recovery test now proves two physical attempts resolve to one observation, one EvidenceItem, and one VERIFIED claim before normal completion.
+
+Final reruns after this change: closure/runtime/lifecycle set **27 passed**; full backend **80 passed, 0 failed**; live PostgreSQL retrieval **5 passed, 0 skipped**; Phase 1 **15/15**. Frontend final run with elevated local execution: `tsc` exit 0, lint exit 0, production build exit 0. Docker backend rebuilt with the reduced context and final Compose smoke returned backend HTTP 200, frontend HTTP 200, PostgreSQL healthy.

@@ -167,7 +167,7 @@ async def test_live_stale_worker_result_is_fenced_at_finalization(pg_factory):
 
 @pytest.mark.asyncio
 async def test_live_crash_before_commit_recovers_through_worker_runtime(pg_factory):
-    _, _, _, _, investigation_id = await _fixture_ids(pg_factory)
+    _, workspace_id, source_id, chunk_id, investigation_id = await _fixture_ids(pg_factory)
     attempts = 0
 
     async def read_only_tool(context, input):
@@ -175,7 +175,12 @@ async def test_live_crash_before_commit_recovers_through_worker_runtime(pg_facto
         attempts += 1
         if attempts == 1:
             raise SimulatedWorkerCrash()
-        return {"results": [{"content": "recovered evidence"}]}
+        evidence = {"source_id": str(source_id), "chunk_id": str(chunk_id), "locator": {"page": 1}, "exact_quote": "authoritative closure evidence"}
+        return {
+            "results": [{"content": "recovered evidence"}],
+            "evidence": [evidence],
+            "claims": [{"statement": "The closure evidence was recovered.", "evidence_ids": [], "calculation_ids": []}],
+        }
 
     registry = ToolRegistry()
     registry.register(ToolDefinition(name="hybrid_document_search", description="deterministic recovery tool", input_model=RetrievalInput, execute=read_only_tool, max_attempts=1))
@@ -202,3 +207,5 @@ async def test_live_crash_before_commit_recovers_through_worker_runtime(pg_facto
         assert attempts == 2
         assert await db.scalar(select(func.count()).select_from(AgentToolAttempt).join(AgentPlanStep).join(AgentPlan).where(AgentPlan.investigation_id == investigation_id)) == 2
         assert await db.scalar(select(func.count()).select_from(AgentObservation).where(AgentObservation.investigation_id == investigation_id, AgentObservation.success.is_(True))) == 1
+        assert await db.scalar(select(func.count()).select_from(EvidenceItem).where(EvidenceItem.session_id == investigation_id)) == 1
+        assert await db.scalar(select(func.count()).select_from(VerifiedClaim).where(VerifiedClaim.session_id == investigation_id, VerifiedClaim.verification_status == "VERIFIED")) == 1
