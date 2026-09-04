@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.runtime import (
     DurablePlanExecutor, PlanSpec, PlanStepSpec, RuntimeBudget, RuntimeErrorCode,
-    claim_next_investigation, release_lease, acquire_lease, persist_runtime_event, logical_identity,
+    claim_next_investigation, release_lease, acquire_lease, persist_runtime_event, publish_persisted_runtime_events, logical_identity,
 )
 from app.models.investigation import InvestigationSession, InvestigationStatus, RuntimeState
 from app.rag.hybrid_search import HybridRetriever
@@ -61,6 +61,7 @@ class InvestigationRuntime:
             investigation.failure_message = "Durable runtime could not complete the investigation."
             await persist_runtime_event(self.db, investigation.id, "investigation.failed", logical_identity(investigation.id, "investigation.failed", investigation.plan_version), {"code": investigation.failure_code})
             await self.db.commit()
+            await publish_persisted_runtime_events(self.db)
             return {"status": RuntimeState.FAILED.value, "error_code": investigation.failure_code}
         if result.get("status") == "completed":
             investigation.status = InvestigationStatus.COMPLETED.value
@@ -71,6 +72,7 @@ class InvestigationRuntime:
         elif result.get("status") == RuntimeState.CANCELLED.value:
             investigation.status = InvestigationStatus.CANCELLED.value
         await self.db.commit()
+        await publish_persisted_runtime_events(self.db)
         return result
 
     async def run_worker_once(self, worker_id: str) -> Optional[Dict[str, Any]]:
@@ -82,6 +84,7 @@ class InvestigationRuntime:
         finally:
             await release_lease(self.db, investigation, worker_id)
             await self.db.commit()
+            await publish_persisted_runtime_events(self.db)
 
 
 async def run_investigation(session_id: uuid.UUID, db: AsyncSession, worker_id: str = "api-worker", registry=None) -> Dict[str, Any]:
@@ -95,6 +98,7 @@ async def run_investigation(session_id: uuid.UUID, db: AsyncSession, worker_id: 
         session.failure_code = RuntimeErrorCode.CANCELLED.value
         session.completed_at = datetime.now(timezone.utc)
         await db.commit()
+        await publish_persisted_runtime_events(db)
         return {"status": RuntimeState.CANCELLED.value}
     from app.core.config import settings
     if registry is None and not (settings.OPENAI_API_KEY or settings.GEMINI_API_KEY):
@@ -105,6 +109,7 @@ async def run_investigation(session_id: uuid.UUID, db: AsyncSession, worker_id: 
         session.completed_at = datetime.now(timezone.utc)
         await persist_runtime_event(db, session.id, "investigation.failed", logical_identity(session.id, "investigation.failed", "provider"), {"code": "LLM_PROVIDER_REQUIRED"})
         await db.commit()
+        await publish_persisted_runtime_events(db)
         return {"status": RuntimeState.FAILED.value, "error_code": "LLM_PROVIDER_REQUIRED"}
     runtime = InvestigationRuntime(db, registry=registry)
     await persist_runtime_event(db, session.id, "investigation.started", logical_identity(session.id, "investigation.started"), {"worker_id": worker_id})
@@ -116,6 +121,7 @@ async def run_investigation(session_id: uuid.UUID, db: AsyncSession, worker_id: 
         session.status = InvestigationStatus.CANCELLED.value
         session.failure_code = RuntimeErrorCode.CANCELLED.value
         await db.commit()
+        await publish_persisted_runtime_events(db)
         return {"status": RuntimeState.CANCELLED.value}
     if not await acquire_lease(db, session, worker_id):
         return {"status": RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value}
@@ -124,3 +130,4 @@ async def run_investigation(session_id: uuid.UUID, db: AsyncSession, worker_id: 
     finally:
         await release_lease(db, session, worker_id)
         await db.commit()
+        await publish_persisted_runtime_events(db)

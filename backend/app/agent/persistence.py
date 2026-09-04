@@ -33,7 +33,17 @@ async def persist_contradiction(session: AsyncSession, *, investigation_id: UUID
     if existing:
         return existing
     record = ContradictionRecord(investigation_id=investigation_id, topic=topic, evidence_a_id=UUID(a), evidence_b_id=UUID(b), conflict_type=values.pop("conflict_type", "CONFLICT"), status="UNRESOLVED", logical_identity=identity, created_at=values.pop("created_at", datetime.now(timezone.utc)))
-    session.add(record); await session.flush(); return record
+    session.add(record)
+    await session.flush()
+    await persist_runtime_event(
+        session,
+        investigation_id,
+        "contradiction.created",
+        logical_identity(investigation_id, "contradiction.created", identity),
+        {"topic": topic, "evidence_a_id": a, "evidence_b_id": b},
+        record.id,
+    )
+    return record
 
 
 async def finalize_synthesis(session: AsyncSession, investigation: InvestigationSession, output: Dict[str, Any], plan_version: int) -> Dict[str, Any]:

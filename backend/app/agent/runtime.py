@@ -41,6 +41,10 @@ class RuntimeErrorCode(str, Enum):
     WORKER_LEASE_UNAVAILABLE = "WORKER_LEASE_UNAVAILABLE"
 
 
+class SimulatedWorkerCrash(BaseException):
+    """Deterministic test seam for a worker dying before result commit."""
+
+
 class PlanStepSpec(BaseModel):
     step_id: str = Field(min_length=1, max_length=100)
     objective: str = Field(min_length=1)
@@ -141,7 +145,7 @@ _TRANSITIONS: Dict[RuntimeState, set[RuntimeState]] = {
     RuntimeState.CREATED: {RuntimeState.PLANNING, RuntimeState.CANCELLED},
     RuntimeState.PLANNING: {RuntimeState.READY, RuntimeState.FAILED, RuntimeState.CANCELLED},
     RuntimeState.READY: {RuntimeState.EXECUTING, RuntimeState.CANCELLED},
-    RuntimeState.EXECUTING: {RuntimeState.OBSERVING, RuntimeState.VERIFYING, RuntimeState.FAILED, RuntimeState.CANCELLED},
+    RuntimeState.EXECUTING: {RuntimeState.READY, RuntimeState.OBSERVING, RuntimeState.VERIFYING, RuntimeState.FAILED, RuntimeState.CANCELLED},
     RuntimeState.OBSERVING: {RuntimeState.VERIFYING, RuntimeState.EXECUTING, RuntimeState.REPLANNING, RuntimeState.FAILED, RuntimeState.CANCELLED},
     RuntimeState.VERIFYING: {RuntimeState.EXECUTING, RuntimeState.REPLANNING, RuntimeState.SYNTHESIZING, RuntimeState.FAILED, RuntimeState.CANCELLED},
     RuntimeState.REPLANNING: {RuntimeState.READY, RuntimeState.FAILED, RuntimeState.CANCELLED},
@@ -336,10 +340,44 @@ async def persist_runtime_event(session: AsyncSession, investigation_id: UUID, e
     existing = (await session.execute(select(RuntimeEvent).where(RuntimeEvent.logical_identity == identity))).scalar_one_or_none()
     if existing:
         return existing
+    # PostgreSQL's unique constraint is the concurrency backstop.  The
+    # conflict-safe insert avoids poisoning a transaction when two workers
+    # replay the same lifecycle event concurrently.
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        stmt = pg_insert(RuntimeEvent).values(
+            investigation_id=investigation_id, event_type=event_type,
+            logical_identity=identity, entity_id=entity_id, payload=payload or {},
+        ).on_conflict_do_nothing(index_elements=[RuntimeEvent.logical_identity])
+        await session.execute(stmt)
+        event = (await session.execute(select(RuntimeEvent).where(RuntimeEvent.logical_identity == identity))).scalar_one()
+        session.info.setdefault("pending_runtime_events", {})[str(event.id)] = event
+        return event
     event = RuntimeEvent(investigation_id=investigation_id, event_type=event_type, logical_identity=identity, entity_id=entity_id, payload=payload or {})
     session.add(event)
     await session.flush()
+    session.info.setdefault("pending_runtime_events", {})[str(event.id)] = event
     return event
+
+
+async def publish_persisted_runtime_events(session: AsyncSession) -> None:
+    """Publish only events already committed by the caller's transaction.
+
+    RuntimeEvent remains authoritative; this helper is intentionally called
+    after commit by service/API boundaries and publishes the persisted event
+    identity rather than constructing a transport-only lifecycle message.
+    """
+    pending = session.info.pop("pending_runtime_events", {})
+    if not pending:
+        return
+    from app.agent.sse_manager import sse_manager
+    for event in pending.values():
+        await sse_manager.emit(str(event.investigation_id), event.event_type, {
+            "event_id": str(event.id),
+            "event_type": event.event_type,
+            "entity_id": str(event.entity_id) if event.entity_id else None,
+            "payload": event.payload or {},
+        })
 
 
 async def get_or_create_logical_output(session: AsyncSession, model: Any, session_id: UUID, identity: str, **values: Any) -> Any:
@@ -347,6 +385,12 @@ async def get_or_create_logical_output(session: AsyncSession, model: Any, sessio
     existing = (await session.execute(select(model).where(model.session_id == session_id, model.logical_identity == identity))).scalar_one_or_none()
     if existing:
         return existing
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        stmt = pg_insert(model).values(session_id=session_id, logical_identity=identity, **values)
+        stmt = stmt.on_conflict_do_nothing(index_elements=[model.session_id, model.logical_identity])
+        await session.execute(stmt)
+        return (await session.execute(select(model).where(model.session_id == session_id, model.logical_identity == identity))).scalar_one()
     obj = model(session_id=session_id, logical_identity=identity, **values)
     session.add(obj)
     await session.flush()
@@ -365,7 +409,9 @@ async def resume_investigation(session: AsyncSession, investigation_id: UUID, wo
     if not await acquire_lease(session, investigation, worker_id, ttl_seconds):
         raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
     # Running attempts are uncertain after a crash; never mark them successful.
-    await session.execute(update(AgentToolAttempt).where(AgentToolAttempt.step_id.in_(select(AgentPlanStep.id).join(AgentPlan, AgentPlanStep.plan_id == AgentPlan.id).where(AgentPlan.investigation_id == investigation_id)), AgentToolAttempt.status == "RUNNING").values(status="ORPHANED", error_classification="WORKER_INTERRUPTED", retryable=True, completed_at=datetime.now(timezone.utc)))
+    orphan_result = await session.execute(update(AgentToolAttempt).where(AgentToolAttempt.step_id.in_(select(AgentPlanStep.id).join(AgentPlan, AgentPlanStep.plan_id == AgentPlan.id).where(AgentPlan.investigation_id == investigation_id)), AgentToolAttempt.status == "RUNNING").values(status="ORPHANED", error_classification="WORKER_INTERRUPTED", retryable=True, completed_at=datetime.now(timezone.utc)))
+    if orphan_result.rowcount and RuntimeState(investigation.current_state) == RuntimeState.EXECUTING:
+        await transition(session, investigation, RuntimeState.READY, "worker_recovery")
     await session.commit()
     return investigation
 
@@ -379,6 +425,14 @@ async def record_contradiction(session: AsyncSession, investigation_id: UUID, to
     record = ContradictionRecord(investigation_id=investigation_id, topic=topic[:255], evidence_a_id=UUID(a), evidence_b_id=UUID(b), conflict_type=conflict_type, status="UNRESOLVED", logical_identity=identity, created_at=datetime.now(timezone.utc))
     session.add(record)
     await session.flush()
+    await persist_runtime_event(
+        session,
+        investigation_id,
+        "contradiction.created",
+        logical_identity(investigation_id, "contradiction.created", identity),
+        {"topic": topic, "evidence_a_id": a, "evidence_b_id": b},
+        record.id,
+    )
     return record
 
 
@@ -446,7 +500,10 @@ class DurablePlanExecutor:
                 statuses[spec.step_id] = "RUNNING"
                 decision = await self._execute_step(investigation, persisted_steps[spec.step_id], spec, definition, context, outputs, statuses)
                 await transition(self.db, investigation, RuntimeState.OBSERVING, "tool_observed")
-                reflection = reflect_on_observation(decision=decision, evidence_sufficient=decision != ObservationDecision.REPLAN)
+                reflection = reflect_on_observation(
+                    decision=decision,
+                    evidence_sufficient=decision in {ObservationDecision.VERIFY, ObservationDecision.COMPLETE_STEP},
+                )
                 if reflection.replan_recommended:
                     if self.replanner is None:
                         raise RuntimeError(RuntimeErrorCode.EVIDENCE_NOT_FOUND.value)
@@ -483,6 +540,16 @@ class DurablePlanExecutor:
                     return ObservationDecision.FAIL
                 await persist_runtime_event(self.db, investigation.id, "tool.started", logical_identity(investigation.id, db_step.id, "tool.started", attempt_no), {"tool": definition.name, "attempt": attempt_no}, attempt.id)
                 result = await self.registry.invoke(definition.name, spec.inputs, context)
+                # Fence the completion boundary as well as the start. A lease
+                # may expire while an external tool is running; a stale worker
+                # must not commit its result after another worker takes over.
+                if worker_id and not await owns_lease(self.db, investigation.id, worker_id):
+                    attempt.status = "FAILED"
+                    attempt.error_classification = "WORKER_LEASE_LOST"
+                    attempt.completed_at = datetime.now(timezone.utc)
+                    attempt.retryable = True
+                    await self.db.flush()
+                    return ObservationDecision.FAIL
                 outputs[spec.step_id] = result
                 attempt.status = "COMPLETED"
                 attempt.completed_at = datetime.now(timezone.utc)
@@ -493,6 +560,11 @@ class DurablePlanExecutor:
                 await self.db.flush()
                 empty = result is None or result == {} or result == [] or (isinstance(result, dict) and isinstance(result.get("results"), list) and not result.get("results"))
                 return decide_after_observation(success=True, empty=empty, evidence_valid=not bool(spec.completion_criteria.get("evidence_required") and empty))
+            except SimulatedWorkerCrash:
+                # Preserve the RUNNING attempt exactly as an uncertain
+                # external execution; the recovery worker will classify it as
+                # ORPHANED and apply the normal safe retry policy.
+                raise
             except BaseException as exc:
                 last_error = exc
                 retryable = is_retryable(exc, definition)
@@ -505,6 +577,16 @@ class DurablePlanExecutor:
                 await record_observation(self.db, investigation.id, "TIMEOUT" if isinstance(exc, asyncio.TimeoutError) else "TOOL_EXECUTION_FAILED", False, str(exc), payload={"step_id": spec.step_id, "attempt": attempt_no, "retryable": retryable})
                 if not retryable or attempt_no >= min(definition.max_attempts, self.budget.max_attempts_per_step):
                     statuses[spec.step_id] = "FAILED"
+                    db_step.status = "FAILED"
+                    await persist_runtime_event(
+                        self.db,
+                        investigation.id,
+                        "step.failed",
+                        logical_identity(investigation.id, db_step.id, "step.failed"),
+                        {"step": spec.step_id, "error": attempt.error_classification},
+                        db_step.id,
+                    )
+                    await self.db.flush()
                     return decide_after_observation(success=False, retryable=retryable, attempts_remaining=False)
                 await asyncio.sleep(0)
         return ObservationDecision.REPLAN

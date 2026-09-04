@@ -295,3 +295,37 @@ The tests are deterministic mechanics coverage; a full process-level domain cras
 | Docker smoke | PARTIAL | Docker Compose services healthy under elevated CLI; `/api/v1/health` and frontend returned HTTP 200 |
 
 The Windows parquet test initially reproduced a `PermissionError` under the restricted execution sandbox; it passed (`2 passed`) with elevated local execution. The DuckDB connection now explicitly unregisters Arrow tables before close to release file handles. Crash tests remain deterministic runtime mechanics rather than a full process-kill domain continuation harness.
+
+# Phase 3 Surgical Closure — Final Execution Evidence
+
+## Lifecycle events
+
+Investigation creation now flushes the row and persists `investigation.created` in the same transaction. Failed terminal attempts set the persisted plan-step status to `FAILED` and persist `step.failed`. Runtime events are staged in the SQLAlchemy session and are published only by `publish_persisted_runtime_events` after the surrounding transaction commits; transport payloads carry the persisted RuntimeEvent ID.
+
+| Event | Persisted RuntimeEvent | Transport source |
+|---|---|---|
+| investigation.created | PASS | persisted event ID |
+| investigation.started | PASS | persisted event ID |
+| state.changed | PASS | persisted event ID |
+| plan.created | PASS | persisted event ID |
+| step.started | PASS | persisted event ID |
+| tool.started / tool.completed / tool.failed | PASS | persisted event ID |
+| observation.created | PASS | persisted event ID |
+| step.verified / step.failed | PASS | persisted event ID |
+| replan.started / plan.revised | PASS | persisted event ID |
+| contradiction.created | PASS where contradiction service is used | persisted event ID when emitted |
+| synthesis.started / synthesis.completed | PASS | persisted event ID |
+| investigation.completed / investigation.failed | PASS | persisted event ID |
+| investigation.cancelled | PASS | persisted event ID |
+
+Lifecycle tests: `backend/tests/test_phase3_lifecycle_events.py` — **3 passed**. The live transport test confirmed each queued SSE lifecycle payload references an ID present in persisted `runtime_events`.
+
+## Live closure tests
+
+`backend/tests/test_phase3_closure_gates.py` — **4 passed** with `POSTGRES_TEST_DATABASE_URL` and independent PostgreSQL sessions. Coverage includes concurrent Evidence/Calculation/Claim logical upserts, stale execution rejection before tool invocation, stale result fencing after ownership takeover, and a worker crash-before-commit retry through the durable worker runtime (2 physical attempts, one successful observation, completed investigation).
+
+Combined Phase 3 closure/runtime regression: **27 passed, 0 failed**. Full backend regression with live PostgreSQL configured: **80 passed, 0 failed**. PostgreSQL retrieval regression: **5 passed, 0 skipped**. Phase 1 evaluation: **15/15**, quality metrics `NOT_MEASURED`.
+
+Frontend verification: TypeScript PASS, lint PASS, production build PASS. Backend compileall PASS. Alembic current head `20260910_phase38_replan`; live `upgrade head` exited 0. Docker Compose PostgreSQL healthy, backend and frontend running, `/api/v1/health` and `/` both returned HTTP 200. Root `.dockerignore` excludes generated dependencies, build output, caches, logs, local databases, and storage artifacts.
+
+Phase 2 semantic retrieval evaluation remains intentionally `BLOCKED — configured semantic embedding path requires unavailable OPENAI_API_KEY`; this does not block Phase 3.

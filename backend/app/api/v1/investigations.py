@@ -20,7 +20,7 @@ from app.api.deps import get_current_user, get_workspace_membership, require_rol
 from app.agent.service import run_investigation
 from app.agent.sse_manager import sse_manager
 from app.agent.runtime import resume_investigation
-from app.agent.runtime import persist_runtime_event, logical_identity
+from app.agent.runtime import persist_runtime_event, logical_identity, publish_persisted_runtime_events
 
 router = APIRouter(tags=["Investigations"])
 
@@ -49,7 +49,22 @@ async def create_investigation(
     if idempotency_key:
         existing = (await db.execute(select(InvestigationSession).where(InvestigationSession.idempotency_key == idempotency_key, InvestigationSession.workspace_id == workspace_id, InvestigationSession.user_id == current_user.id))).scalar_one_or_none()
         if existing:
-            return ResponseEnvelope.ok(InvestigationResponse.model_validate(existing))
+            # Avoid lazy-loading the steps relationship from an async session
+            # during response validation; the idempotent replay only needs to
+            # return the authoritative investigation identity/state.
+            return ResponseEnvelope.ok(InvestigationResponse(
+                id=existing.id, workspace_id=existing.workspace_id,
+                user_id=existing.user_id, objective=existing.objective,
+                status=existing.status, current_state=existing.current_state,
+                plan_version=existing.plan_version,
+                failure_code=existing.failure_code,
+                failure_message=existing.failure_message,
+                final_response=existing.final_response,
+                token_usage=existing.token_usage or {},
+                error_message=existing.error_message,
+                created_at=existing.created_at,
+                completed_at=existing.completed_at, steps=[],
+            ))
     session = InvestigationSession(
         workspace_id=workspace_id,
         user_id=current_user.id,
@@ -58,7 +73,19 @@ async def create_investigation(
         idempotency_key=idempotency_key
     )
     db.add(session)
+    # Creation and its authoritative lifecycle event commit together.  The
+    # event is persisted before any background execution is scheduled.
+    await db.flush()
+    await persist_runtime_event(
+        db,
+        session.id,
+        "investigation.created",
+        logical_identity(session.id, "investigation.created"),
+        {"workspace_id": str(workspace_id), "user_id": str(current_user.id)},
+        session.id,
+    )
     await db.commit()
+    await publish_persisted_runtime_events(db)
     await db.refresh(session)
 
     # Launch background state machine
@@ -273,6 +300,7 @@ async def cancel_investigation(
     session.failure_message = "Cancellation requested by user."
     await persist_runtime_event(db, investigation_id, "investigation.cancelled", logical_identity(investigation_id, "investigation.cancelled"), {"reason": "user_request"})
     await db.commit()
+    await publish_persisted_runtime_events(db)
 
     return ResponseEnvelope.ok(InvestigationCancelResponse(
         investigation_id=investigation_id,
