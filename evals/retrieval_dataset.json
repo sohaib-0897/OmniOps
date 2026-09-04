@@ -1,0 +1,18 @@
+{
+  "documents": [
+    {"id": "margin-south", "content": "The South region achieved the highest operating margin at 31 percent.", "source": "finance-q3"},
+    {"id": "margin-north", "content": "North region operating margin was 22 percent.", "source": "finance-q3"},
+    {"id": "profitability-synonym", "content": "Southern operations delivered the strongest profitability ratio among all regions.", "source": "management-memo"},
+    {"id": "support-keyword-trap", "content": "Support operates with a high margin for ticket escalation response.", "source": "support-report"},
+    {"id": "customer-support", "content": "Customer satisfaction improved after support response time fell.", "source": "support-report"},
+    {"id": "foreign-margin", "content": "The highest operating margin was 99 percent.", "source": "foreign-ledger", "tenant": "foreign"}
+  ],
+  "queries": [
+    {"id": "exact", "query": "highest operating margin", "relevant": ["margin-south"]},
+    {"id": "semantic", "query": "which division was most profitable", "relevant": ["margin-south", "profitability-synonym"]},
+    {"id": "mixed", "query": "regional profitability and operating margin", "relevant": ["margin-south", "margin-north", "profitability-synonym"]},
+    {"id": "multi-document", "query": "compare finance results with management profitability commentary", "relevant": ["margin-south", "margin-north", "profitability-synonym"]},
+    {"id": "keyword-trap", "query": "highest regional margin", "relevant": ["margin-south"]},
+    {"id": "tenant-isolation", "query": "highest operating margin 99 percent", "relevant": ["margin-south"]}
+  ]
+}
