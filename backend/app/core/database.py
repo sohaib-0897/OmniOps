@@ -11,8 +11,10 @@ if settings.DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
     engine_kwargs["pool_pre_ping"] = True
-    engine_kwargs["pool_size"] = 10
-    engine_kwargs["max_overflow"] = 20
+    engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT_SECONDS
+    engine_kwargs["pool_recycle"] = settings.DB_POOL_RECYCLE_SECONDS
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 

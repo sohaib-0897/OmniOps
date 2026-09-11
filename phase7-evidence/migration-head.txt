@@ -1,0 +1,4 @@
+20260911_phase6_sessions (head)
+
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.

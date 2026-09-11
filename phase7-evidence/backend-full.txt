@@ -1,0 +1,67 @@
+........................................................................ [ 40%]
+..................................................................FF.... [ 80%]
+..................................                                       [100%]
+================================== FAILURES ===================================
+_____ test_audio_segments_preserve_provider_timestamps_and_null_speakers ______
+
+tmp_path = WindowsPath('C:/Users/Sohaib/AppData/Local/Temp/pytest-of-Sohaib/pytest-9/test_audio_segments_preserve_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000021E72783140>
+
+    @pytest.mark.asyncio
+    async def test_audio_segments_preserve_provider_timestamps_and_null_speakers(tmp_path, monkeypatch):
+        path = tmp_path / "speech.wav"
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(8000)
+            handle.writeframes(b"\x00\x00" * 800)
+    
+        class FakeProvider:
+            model = "test-audio"
+    
+            async def transcribe_audio(self, *_args, **_kwargs):
+                return AudioAnalysis(segments=[TranscriptSegment(start_ms=120, end_ms=980, text="Revenue increased")])
+    
+        monkeypatch.setattr("app.ingestion.audio_parser.configured_gemini_multimodal", lambda: FakeProvider())
+        parsed = await transcribe_audio_recording(str(path))
+>       assert parsed["status"] == ExtractionStatus.READY.value
+E       AssertionError: assert 'TRANSCRIPTION_UNAVAILABLE' == 'READY'
+E         
+E         - READY
+E         + TRANSCRIPTION_UNAVAILABLE
+
+backend\tests\test_phase5_multimodal.py:214: AssertionError
+_________ test_audio_provider_empty_result_is_no_text_not_fabricated __________
+
+tmp_path = WindowsPath('C:/Users/Sohaib/AppData/Local/Temp/pytest-of-Sohaib/pytest-9/test_audio_provider_empty_resu0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000021E72813FB0>
+
+    @pytest.mark.asyncio
+    async def test_audio_provider_empty_result_is_no_text_not_fabricated(tmp_path, monkeypatch):
+        path = tmp_path / "silence.wav"
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(8000)
+            handle.writeframes(b"\x00\x00" * 800)
+    
+        class EmptyProvider:
+            model = "test-audio"
+    
+            async def transcribe_audio(self, *_args, **_kwargs):
+                return AudioAnalysis()
+    
+        monkeypatch.setattr("app.ingestion.audio_parser.configured_gemini_multimodal", lambda: EmptyProvider())
+        parsed = await transcribe_audio_recording(str(path))
+>       assert parsed["status"] == ExtractionStatus.NO_TEXT_DETECTED.value
+E       AssertionError: assert 'TRANSCRIPTION_UNAVAILABLE' == 'NO_TEXT_DETECTED'
+E         
+E         - NO_TEXT_DETECTED
+E         + TRANSCRIPTION_UNAVAILABLE
+
+backend\tests\test_phase5_multimodal.py:237: AssertionError
+=========================== short test summary info ===========================
+FAILED backend/tests/test_phase5_multimodal.py::test_audio_segments_preserve_provider_timestamps_and_null_speakers
+FAILED backend/tests/test_phase5_multimodal.py::test_audio_provider_empty_result_is_no_text_not_fabricated
+2 failed, 176 passed in 143.63s (0:02:23)
+

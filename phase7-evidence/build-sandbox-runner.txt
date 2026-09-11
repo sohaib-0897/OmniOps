@@ -1,0 +1,43 @@
+
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.sandbox-runner
+#1 transferring dockerfile: 690B 0.0s done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/omniops-backend:phase7
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 272B 0.0s done
+#3 DONE 0.1s
+
+#4 [1/4] FROM docker.io/library/omniops-backend:phase7@sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71
+#4 resolve docker.io/library/omniops-backend:phase7@sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71 0.2s done
+#4 DONE 0.2s
+
+#5 [internal] load build context
+#5 transferring context: 6.45kB 0.1s done
+#5 DONE 0.2s
+
+#4 [1/4] FROM docker.io/library/omniops-backend:phase7@sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71
+#4 CACHED
+
+#6 [2/4] RUN rm -rf /app /root/.cache
+#6 DONE 0.8s
+
+#7 [3/4] COPY backend/app/sandbox_runner_server.py /sandbox_runner_server.py
+#7 DONE 0.3s
+
+#8 exporting to image
+#8 exporting layers
+#8 exporting layers 0.8s done
+#8 exporting manifest sha256:442e0b5af1fa76e5b3157c8340ca5bd3535b9a12e23c8c04923f7b6c453e6899 0.1s done
+#8 exporting config sha256:26511e40dd603e27ed8ea6ba4384a1edbda93cf03ab39f976eeaf57d069c3f21 0.1s done
+#8 exporting attestation manifest sha256:56919dec62f08228c822224db1661f5b2872102d499a07d5c3449aa0f57cc34d 0.1s done
+#8 exporting manifest list sha256:333210bc42482a213c5c68b5fad45862b94bc5c7a92701d80439545f56e541e0
+#8 exporting manifest list sha256:333210bc42482a213c5c68b5fad45862b94bc5c7a92701d80439545f56e541e0 0.1s done
+#8 naming to docker.io/library/omniops-sandbox-runner:phase7 0.0s done
+#8 unpacking to docker.io/library/omniops-sandbox-runner:phase7
+#8 unpacking to docker.io/library/omniops-sandbox-runner:phase7 0.2s done
+#8 DONE 1.5s

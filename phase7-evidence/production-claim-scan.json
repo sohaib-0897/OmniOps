@@ -1,0 +1,942 @@
+[
+  {
+    "file": "backend\\app\\worker.py",
+    "line": 14,
+    "text": "await asyncio.sleep(0.25 if result else 1.0)"
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 8,
+    "text": "from app.models.evidence import EvidenceItem, CalculationRecord, VerifiedClaim, ContradictionRecord"
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 43,
+    "text": "confidence_score=item.get(\"confidence_score\"),"
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 59,
+    "text": "claim_rows: list[VerifiedClaim] = []"
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 76,
+    "text": "verification_status=\"VERIFIED\","
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 88,
+    "text": "async def persist_claim(session: AsyncSession, *, session_id: UUID, step_id: str, statement: str, lineage: Any, **values: Any) -> VerifiedClaim:"
+  },
+  {
+    "file": "backend\\app\\agent\\persistence.py",
+    "line": 90,
+    "text": "return await get_or_create_logical_output(session, VerifiedClaim, session_id, identity, claim_id_code=values.pop(\"claim_id_code\", None) or identity[:12], statement=statement, **values)"
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 22,
+    "text": "from app.models.evidence import ContradictionRecord, RuntimeEvent, EvidenceItem, CalculationRecord, VerifiedClaim"
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 254,
+    "text": "\"\"\"Bounded deterministic control decision; model confidence never overrides evidence validity.\"\"\""
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 515,
+    "text": "await transition(self.db, investigation, RuntimeState.EXECUTING, \"step_verified\")"
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 519,
+    "text": "await transition(self.db, investigation, RuntimeState.SYNTHESIZING, \"verified_outputs\")"
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 568,
+    "text": "await persist_runtime_event(self.db, investigation.id, \"step.verified\", logical_identity(investigation.id, db_step.id, \"step.verified\"), {\"step\": spec.step_id}, db_step.id)"
+  },
+  {
+    "file": "backend\\app\\agent\\runtime.py",
+    "line": 600,
+    "text": "await asyncio.sleep(0)"
+  },
+  {
+    "file": "backend\\app\\agent\\service.py",
+    "line": 108,
+    "text": "session.failure_message = \"A configured semantic provider is required for production investigation planning.\""
+  },
+  {
+    "file": "backend\\app\\agent\\state.py",
+    "line": 46,
+    "text": "confidence_score: Optional[float] = None"
+  },
+  {
+    "file": "backend\\app\\agent\\state.py",
+    "line": 60,
+    "text": "verified_claims: List[EpistemicClaim] = Field(default_factory=list)"
+  },
+  {
+    "file": "backend\\app\\core\\config.py",
+    "line": 36,
+    "text": "# Production retrieval requires PostgreSQL with the migrated pgvector schema."
+  },
+  {
+    "file": "backend\\app\\core\\config.py",
+    "line": 157,
+    "text": "# In development/test environments, use a stable fallback if not provided"
+  },
+  {
+    "file": "backend\\app\\core\\config.py",
+    "line": 158,
+    "text": "return self.SECRET_KEY or \"omniops-dev-insecure-fallback-secret-key-local-only\""
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 9,
+    "text": "from app.models.evidence import CalculationRecord, EvidenceItem, VerifiedClaim, InferenceRecord"
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 123,
+    "text": "claim = (await db.execute(select(VerifiedClaim).where("
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 124,
+    "text": "VerifiedClaim.session_id == session_id,"
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 125,
+    "text": "VerifiedClaim.claim_id_code == code,"
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 126,
+    "text": "VerifiedClaim.verification_status == \"VERIFIED\","
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 129,
+    "text": "errors.append(f\"VERIFIED_CLAIM_NOT_FOUND:{code}\")"
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 144,
+    "text": "InferenceRecord.verification_status == \"VERIFIED\","
+  },
+  {
+    "file": "backend\\app\\evidence\\validator.py",
+    "line": 147,
+    "text": "errors.append(f\"VERIFIED_INFERENCE_NOT_FOUND:{code}\")"
+  },
+  {
+    "file": "backend\\app\\ingestion\\audio_parser.py",
+    "line": 74,
+    "text": "\"metadata\": {\"error_code\": \"TRANSCRIPTION_UNAVAILABLE\", \"diarization\": \"NOT_SUPPORTED\"},"
+  },
+  {
+    "file": "backend\\app\\ingestion\\audio_parser.py",
+    "line": 90,
+    "text": "return {\"status\": ExtractionStatus.READY.value if chunks else ExtractionStatus.NO_TEXT_DETECTED.value, \"chunks\": chunks, \"metadata\": {\"transcription_provider\": \"openai\", \"transcription_model\": \"whisper-1\", \"diarization\": \"NOT_SUPPORTED\"}}"
+  },
+  {
+    "file": "backend\\app\\ingestion\\audio_parser.py",
+    "line": 110,
+    "text": "\"metadata\": {\"file_size_bytes\": os.path.getsize(file_path), \"transcription_status\": ExtractionStatus.TRANSCRIPTION_UNAVAILABLE.value, \"error_code\": \"TRANSCRIPTION_UNAVAILABLE\", \"diarization\": \"NOT_SUPPORTED\"},"
+  },
+  {
+    "file": "backend\\app\\ingestion\\audio_parser.py",
+    "line": 115,
+    "text": "\"\"\"Use the explicitly configured genuine provider, with no heuristic fallback.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\audio_parser.py",
+    "line": 121,
+    "text": "# fabricated fallback and never selected after a Gemini provider failure."
+  },
+  {
+    "file": "backend\\app\\ingestion\\capabilities.py",
+    "line": 5,
+    "text": "and never reports semantic support merely because a file type is accepted."
+  },
+  {
+    "file": "backend\\app\\ingestion\\capabilities.py",
+    "line": 24,
+    "text": "NOT_SUPPORTED = \"NOT_SUPPORTED\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\capabilities.py",
+    "line": 109,
+    "text": "\"image_semantic_vision\": _gemini_capability(\"image\", model=settings.GEMINI_VISION_MODEL),"
+  },
+  {
+    "file": "backend\\app\\ingestion\\capabilities.py",
+    "line": 127,
+    "text": "status=CapabilityStatus.AVAILABLE if settings.GEMINI_API_KEY and _gemini_capability(\"speaker_diarization\", model=settings.GEMINI_TRANSCRIPTION_MODEL).status == CapabilityStatus.AVAILABLE else CapabilityStatus.NOT_SUPPORTED,"
+  },
+  {
+    "file": "backend\\app\\ingestion\\contracts.py",
+    "line": 63,
+    "text": "confidence: Optional[float] = None"
+  },
+  {
+    "file": "backend\\app\\ingestion\\contracts.py",
+    "line": 71,
+    "text": "\"\"\"Parser result with explicit partial/failure semantics.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\file_guard.py",
+    "line": 30,
+    "text": "clean_name = f\"upload_{os.urandom(4).hex()}_{clean_name.lstrip('.')}\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\file_guard.py",
+    "line": 118,
+    "text": "temp_target_path = workspace_dir / f\"tmp_{os.urandom(8).hex()}_{clean_filename}\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\pdf_parser.py",
+    "line": 1,
+    "text": "\"\"\"Page-aware PDF extraction with genuine OCR fallback when available.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\pdf_parser.py",
+    "line": 51,
+    "text": "image = Image.frombytes(\"RGB\", (pixmap.width, pixmap.height), pixmap.samples)"
+  },
+  {
+    "file": "backend\\app\\ingestion\\tabular.py",
+    "line": 20,
+    "text": "\"\"\"Compute detailed column metadata, statistics, and sample values.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\tabular.py",
+    "line": 31,
+    "text": "# Get up to 3 non-null sample values"
+  },
+  {
+    "file": "backend\\app\\ingestion\\tabular.py",
+    "line": 32,
+    "text": "non_null_samples = col_series.dropna().head(3).tolist()"
+  },
+  {
+    "file": "backend\\app\\ingestion\\tabular.py",
+    "line": 33,
+    "text": "sample_values = [str(val) for val in non_null_samples]"
+  },
+  {
+    "file": "backend\\app\\ingestion\\tabular.py",
+    "line": 41,
+    "text": "\"sample_values\": sample_values,"
+  },
+  {
+    "file": "backend\\app\\ingestion\\vision_parser.py",
+    "line": 1,
+    "text": "\"\"\"Image validation and provider-backed semantic analysis.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\vision_parser.py",
+    "line": 80,
+    "text": "\"\"\"Run genuine structured vision when configured; never invent semantics.\"\"\""
+  },
+  {
+    "file": "backend\\app\\ingestion\\vision_parser.py",
+    "line": 132,
+    "text": "\"confidence\": analysis.confidence,"
+  },
+  {
+    "file": "backend\\app\\ingestion\\web_fetcher.py",
+    "line": 30,
+    "text": "ipaddress.ip_network(\"198.18.0.0/15\"),   # benchmarking networks"
+  },
+  {
+    "file": "backend\\app\\ingestion\\web_fetcher.py",
+    "line": 156,
+    "text": "async def sleep(self, seconds: float) -> None:"
+  },
+  {
+    "file": "backend\\app\\ingestion\\web_fetcher.py",
+    "line": 157,
+    "text": "await self._backend.sleep(seconds)"
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 11,
+    "text": "\"\"\"Deterministic structured-data provider; never performs semantic reasoning.\"\"\""
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 17,
+    "text": "\"The deterministic engine requires tabular data; semantic analysis needs an LLM provider.\""
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 32,
+    "text": "reasoning_summary=\"Deterministic table profiling only; no semantic conclusions will be generated.\","
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 42,
+    "text": "raise CapabilityLimitError(\"The deterministic engine cannot perform semantic tool selection.\")"
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 66,
+    "text": "epistemic_type=\"calculation\", confidence_score=None,"
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 73,
+    "text": "executive_summary=\"Only reproducible structured-data calculations are reported. Semantic interpretation was not performed.\","
+  },
+  {
+    "file": "backend\\app\\llm\\analytical_provider.py",
+    "line": 75,
+    "text": "missing_data_warnings=[\"LLM_PROVIDER_REQUIRED for semantic analysis, inference, or recommendations.\"],"
+  },
+  {
+    "file": "backend\\app\\llm\\base.py",
+    "line": 27,
+    "text": "confidence_score: Optional[float] = Field(default=None, validation_alias=AliasChoices(\"confidence_score\", \"confidence\"))"
+  },
+  {
+    "file": "backend\\app\\llm\\client.py",
+    "line": 82,
+    "text": "\"SEMANTIC_PROVIDER_FAILED\","
+  },
+  {
+    "file": "backend\\app\\llm\\gemini_provider.py",
+    "line": 152,
+    "text": "\"confidence_score\": null,"
+  },
+  {
+    "file": "backend\\app\\llm\\multimodal.py",
+    "line": 5,
+    "text": "never synthesizes fallback descriptions, transcripts, timestamps, or speakers."
+  },
+  {
+    "file": "backend\\app\\llm\\multimodal.py",
+    "line": 30,
+    "text": "confidence: Optional[float] = Field(default=None, ge=0, le=1)"
+  },
+  {
+    "file": "backend\\app\\llm\\multimodal.py",
+    "line": 77,
+    "text": "\"confidence\": {\"type\": [\"number\", \"null\"]},"
+  },
+  {
+    "file": "backend\\app\\llm\\multimodal.py",
+    "line": 167,
+    "text": "\"key_observations (array of strings), limitations (array of strings), confidence (number). \""
+  },
+  {
+    "file": "backend\\app\\llm\\openai_provider.py",
+    "line": 165,
+    "text": "\"confidence_score\": null,"
+  },
+  {
+    "file": "backend\\app\\models\\document.py",
+    "line": 8,
+    "text": "from pgvector.sqlalchemy import Vector"
+  },
+  {
+    "file": "backend\\app\\models\\document.py",
+    "line": 16,
+    "text": "\"\"\"PostgreSQL vector in production; JSON only for the labeled SQLite development fallback.\"\"\""
+  },
+  {
+    "file": "backend\\app\\models\\document.py",
+    "line": 27,
+    "text": "\"\"\"PostgreSQL tsvector; text placeholder in SQLite development schemas.\"\"\""
+  },
+  {
+    "file": "backend\\app\\models\\document.py",
+    "line": 128,
+    "text": "semantic_search_status: Mapped[str] = mapped_column(String(50), default=\"PENDING\", nullable=False)"
+  },
+  {
+    "file": "backend\\app\\models\\evidence.py",
+    "line": 48,
+    "text": "confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)"
+  },
+  {
+    "file": "backend\\app\\models\\evidence.py",
+    "line": 74,
+    "text": "class VerifiedClaim(Base, BaseMixin):"
+  },
+  {
+    "file": "backend\\app\\models\\evidence.py",
+    "line": 75,
+    "text": "__tablename__ = \"verified_claims\""
+  },
+  {
+    "file": "backend\\app\\models\\evidence.py",
+    "line": 90,
+    "text": "confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)"
+  },
+  {
+    "file": "backend\\app\\models\\evidence.py",
+    "line": 103,
+    "text": "session: Mapped[\"InvestigationSession\"] = relationship(\"InvestigationSession\", back_populates=\"verified_claims\")"
+  },
+  {
+    "file": "backend\\app\\models\\investigation.py",
+    "line": 100,
+    "text": "verified_claims: Mapped[List[\"VerifiedClaim\"]] = relationship("
+  },
+  {
+    "file": "backend\\app\\models\\investigation.py",
+    "line": 101,
+    "text": "\"VerifiedClaim\","
+  },
+  {
+    "file": "backend\\app\\models\\__init__.py",
+    "line": 19,
+    "text": "VerifiedClaim,"
+  },
+  {
+    "file": "backend\\app\\models\\__init__.py",
+    "line": 49,
+    "text": "\"VerifiedClaim\","
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 18,
+    "text": "DEVELOPMENT_FALLBACK = \"DEVELOPMENT_FALLBACK\""
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 32,
+    "text": "\"\"\"Explicit SQLite/test-only ranking fallback. Never used for PostgreSQL retrieval.\"\"\""
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 46,
+    "text": "\"\"\"Genuine provider embeddings for PostgreSQL, explicit hash fallback for SQLite only.\"\"\""
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 49,
+    "text": "async def generate(cls, text: str, *, allow_development_fallback: bool = False) -> EmbeddingResult:"
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 56,
+    "text": "if allow_development_fallback:"
+  },
+  {
+    "file": "backend\\app\\rag\\embeddings.py",
+    "line": 59,
+    "text": "state=EmbeddingState.DEVELOPMENT_FALLBACK, vector=vector,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 31,
+    "text": "semantic_rank: Optional[int] = None"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 33,
+    "text": "semantic_similarity: Optional[float] = None"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 45,
+    "text": "semantic_state: str"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 68,
+    "text": "\"\"\"PostgreSQL-native pgvector + full-text candidates fused by database-side RRF.\"\"\""
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 75,
+    "text": "embedding = await EmbeddingProvider.generate(query, allow_development_fallback=False)"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 76,
+    "text": "semantic_ready = embedding.state == EmbeddingState.READY"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 86,
+    "text": "placeholders = []"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 90,
+    "text": "placeholders.append(f\":{key}\")"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 91,
+    "text": "predicates.append(f\"dc.source_id IN ({', '.join(placeholders)})\")"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 94,
+    "text": "if semantic_ready:"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 96,
+    "text": "semantic_cte = f\"\"\""
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 97,
+    "text": "semantic AS ("
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 99,
+    "text": "row_number() OVER (ORDER BY dc.embedding <=> CAST(:query_embedding AS vector), dc.id) AS semantic_rank,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 100,
+    "text": "1 - (dc.embedding <=> CAST(:query_embedding AS vector)) AS semantic_similarity"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 102,
+    "text": "WHERE {where_sql} AND dc.embedding IS NOT NULL AND dc.semantic_search_status = 'READY'"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 108,
+    "text": "semantic_cte = \"semantic AS (SELECT NULL::uuid AS id, NULL::bigint AS semantic_rank, NULL::double precision AS semantic_similarity WHERE FALSE)\""
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 111,
+    "text": "WITH {semantic_cte},"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 124,
+    "text": "SELECT id FROM semantic UNION SELECT id FROM lexical"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 127,
+    "text": "SELECT ids.id, s.semantic_rank, l.lexical_rank, s.semantic_similarity, l.lexical_score,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 128,
+    "text": "COALESCE(1.0 / (:rrf_k + s.semantic_rank), 0.0) +"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 131,
+    "text": "LEFT JOIN semantic s ON s.id = ids.id"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 136,
+    "text": "fused.semantic_rank, fused.lexical_rank, fused.semantic_similarity, fused.lexical_score,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 147,
+    "text": "mode=\"HYBRID\" if semantic_ready else \"LEXICAL_ONLY\","
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 148,
+    "text": "backend=\"POSTGRESQL_PGVECTOR_FTS_RRF\", rrf_k=settings.HYBRID_RRF_K,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 149,
+    "text": "results=results, semantic_state=embedding.state.value, lexical_state=\"READY\","
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 153,
+    "text": "class DevelopmentFallbackRetriever:"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 154,
+    "text": "\"\"\"Labeled SQLite-only fallback. It makes no PostgreSQL/FTS/pgvector claims.\"\"\""
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 168,
+    "text": "query_embedding = await EmbeddingProvider.generate(query, allow_development_fallback=True)"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 172,
+    "text": "semantic = sum(a * b for a, b in zip(query_embedding.vector or [], vector)) if vector else 0.0"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 174,
+    "text": "ranked.append((semantic, lexical, str(chunk.id), chunk, source_name))"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 175,
+    "text": "semantic_order = {item[2]: rank for rank, item in enumerate(sorted(ranked, key=lambda item: (-item[0], item[2])), 1)}"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 178,
+    "text": "for semantic, lexical, chunk_id, chunk, source_name in ranked:"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 179,
+    "text": "fused = 1 / (settings.HYBRID_RRF_K + semantic_order[chunk_id]) + 1 / (settings.HYBRID_RRF_K + lexical_order[chunk_id])"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 184,
+    "text": "semantic_rank=semantic_order[chunk_id], lexical_rank=lexical_order[chunk_id],"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 185,
+    "text": "semantic_similarity=semantic, lexical_score=float(lexical), fused_score=fused,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 190,
+    "text": "mode=\"DEVELOPMENT_FALLBACK\", backend=\"SQLITE_DEVELOPMENT_FALLBACK\","
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 192,
+    "text": "semantic_state=EmbeddingState.DEVELOPMENT_FALLBACK.value,"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 208,
+    "text": "return await DevelopmentFallbackRetriever.search(workspace_id, query, db, top_k, source_ids, modality_filter)"
+  },
+  {
+    "file": "backend\\app\\rag\\hybrid_search.py",
+    "line": 209,
+    "text": "raise RetrievalError(\"POSTGRESQL_RETRIEVAL_REQUIRED\", \"Full hybrid retrieval requires PostgreSQL with pgvector.\")"
+  },
+  {
+    "file": "backend\\app\\schemas\\document.py",
+    "line": 36,
+    "text": "semantic_search_status: str"
+  },
+  {
+    "file": "backend\\app\\schemas\\document.py",
+    "line": 61,
+    "text": "sample_rows: List[Dict[str, Any]]"
+  },
+  {
+    "file": "backend\\app\\schemas\\evidence.py",
+    "line": 19,
+    "text": "confidence_score: Optional[float] = None"
+  },
+  {
+    "file": "backend\\app\\schemas\\evidence.py",
+    "line": 38,
+    "text": "class VerifiedClaimResponse(BaseModel):"
+  },
+  {
+    "file": "backend\\app\\schemas\\evidence.py",
+    "line": 44,
+    "text": "confidence_score: Optional[float] = None"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\evidence.py",
+    "line": 11,
+    "text": "from app.models.evidence import EvidenceItem, CalculationRecord, VerifiedClaim, InferenceRecord, RecommendationRecord"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\evidence.py",
+    "line": 16,
+    "text": "VerifiedClaimResponse,"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\evidence.py",
+    "line": 52,
+    "text": "select(VerifiedClaim).where(VerifiedClaim.session_id == investigation_id)"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\evidence.py",
+    "line": 100,
+    "text": "\"confidence\": ev.confidence_score"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\evidence.py",
+    "line": 136,
+    "text": "\"confidence\": cl.confidence_score,"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 29,
+    "text": "development_fallback = db.get_bind().dialect.name == \"sqlite\" and settings.ENVIRONMENT.lower() in {\"development\", \"test\"}"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 30,
+    "text": "result = await EmbeddingProvider.generate(content, allow_development_fallback=development_fallback)"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 31,
+    "text": "searchable = result.state in {EmbeddingState.READY, EmbeddingState.DEVELOPMENT_FALLBACK}"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 38,
+    "text": "\"semantic_search_status\": result.state.value,"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 183,
+    "text": "doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed[\"metadata\"], \"semantic_status\": parsed[\"status\"], \"extraction_status\": parsed[\"status\"]}"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 204,
+    "text": "doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed[\"metadata\"], \"semantic_status\": parsed[\"status\"], \"extraction_status\": parsed[\"status\"]}"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 233,
+    "text": "chunk_states = (await db.execute(select(DocumentChunk.semantic_search_status).where(DocumentChunk.source_id == doc.id))).scalars().all()"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 235,
+    "text": "semantic_state = \"READY\" if all(state == \"READY\" for state in chunk_states) else ("
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 236,
+    "text": "\"DEVELOPMENT_FALLBACK\" if all(state == \"DEVELOPMENT_FALLBACK\" for state in chunk_states) else \"UNAVAILABLE\""
+  },
+  {
+    "file": "backend\\app\\api\\v1\\files.py",
+    "line": 238,
+    "text": "doc.doc_metadata = {**(doc.doc_metadata or {}), \"search_indexing\": {\"lexical\": \"READY\", \"semantic\": semantic_state}}"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\health.py",
+    "line": 26,
+    "text": "checks[\"pgvector\"] = \"ready\" if vector else \"unavailable\""
+  },
+  {
+    "file": "backend\\app\\api\\v1\\health.py",
+    "line": 41,
+    "text": "required = [checks.get(\"database\") == \"ready\", checks.get(\"pgvector\", \"ready\") == \"ready\", checks.get(\"migrations\", \"ready\") == \"ready\", checks.get(\"sandbox_runner\") not in {\"unavailable\"}]"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\investigations.py",
+    "line": 269,
+    "text": "await asyncio.sleep(1)"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\tables.py",
+    "line": 35,
+    "text": "\"\"\"Get sample rows and schema definition for a tabular dataset.\"\"\""
+  },
+  {
+    "file": "backend\\app\\api\\v1\\tables.py",
+    "line": 49,
+    "text": "# Query 50 sample rows via DuckDB"
+  },
+  {
+    "file": "backend\\app\\api\\v1\\tables.py",
+    "line": 58,
+    "text": "sample_rows=result.data or [],"
+  },
+  {
+    "file": "frontend\\src\\hooks\\useInvestigationStream.ts",
+    "line": 211,
+    "text": "// Keep the fallback poller bounded when a read takes longer than its interval."
+  },
+  {
+    "file": "frontend\\src\\hooks\\useInvestigationStream.ts",
+    "line": 350,
+    "text": "\"step.verified\","
+  },
+  {
+    "file": "frontend\\src\\hooks\\useInvestigationStream.ts",
+    "line": 372,
+    "text": "// 3. Fallback active poller while investigation is active"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 79,
+    "text": "semantic_search_status: string;"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 89,
+    "text": "sample_values: string[];"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 111,
+    "text": "sample_rows: Record<string, any>[];"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 136,
+    "text": "confidence_score: number | null;"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 141,
+    "text": "verification_status?: \"VERIFIED\" | \"REJECTED\";"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 149,
+    "text": "verification_status?: \"VERIFIED\" | \"REJECTED\";"
+  },
+  {
+    "file": "frontend\\src\\types\\api.ts",
+    "line": 220,
+    "text": "confidence_score: number | null;"
+  },
+  {
+    "file": "frontend\\src\\app\\page.tsx",
+    "line": 239,
+    "text": "placeholder=\"name@company.com\""
+  },
+  {
+    "file": "frontend\\src\\app\\page.tsx",
+    "line": 373,
+    "text": "placeholder=\"Search workspaces\""
+  },
+  {
+    "file": "frontend\\src\\app\\page.tsx",
+    "line": 469,
+    "text": "placeholder=\"e.g. Quarterly operating review\""
+  },
+  {
+    "file": "frontend\\src\\components\\ui\\Dialog.tsx",
+    "line": 9,
+    "text": "/** Native modal semantics provide focus containment, Escape and inert background. */"
+  },
+  {
+    "file": "frontend\\src\\components\\ui\\Primitives.tsx",
+    "line": 43,
+    "text": "const success = [\"completed\", \"ready\", \"verified\"].includes(normalized);"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\EvidenceLineageDrawer.tsx",
+    "line": 125,
+    "text": "{claim.confidence_score != null && ("
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\EvidenceLineageDrawer.tsx",
+    "line": 127,
+    "text": "Provider-reported confidence:{\" \"}"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\EvidenceLineageDrawer.tsx",
+    "line": 128,
+    "text": "{formatNumber(claim.confidence_score * 100)}%"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\ExecutiveReportView.tsx",
+    "line": 79,
+    "text": "establish semantic truth."
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\ExecutiveReportView.tsx",
+    "line": 159,
+    "text": "claim.verification_status === \"VERIFIED\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\ExecutiveReportView.tsx",
+    "line": 160,
+    "text": "? \"References verified\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\ExecutiveReportView.tsx",
+    "line": 227,
+    "text": "Interpretations supported by claims, distinct from verified facts."
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\LiveActivityStepper.tsx",
+    "line": 191,
+    "text": "event.type.includes(\"verified\")"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\MetricChartRenderer.tsx",
+    "line": 14,
+    "text": "\"Verified references\","
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\MetricChartRenderer.tsx",
+    "line": 15,
+    "text": "claims.filter((claim) => claim.verification_status === \"VERIFIED\").length,"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\ObjectiveInput.tsx",
+    "line": 59,
+    "text": "placeholder=\"e.g. Compare quarterly margins, explain the variance, and cite the supporting sources.\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\SourceDataCatalog.tsx",
+    "line": 89,
+    "text": "placeholder=\"Search sources\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\SourcePreviewModal.tsx",
+    "line": 101,
+    "text": "placeholder=\"Search extracted content\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\SourcePreviewModal.tsx",
+    "line": 171,
+    "text": "<dt>Semantic retrieval</dt>"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\SourcePreviewModal.tsx",
+    "line": 172,
+    "text": "<dd>{chunk.semantic_search_status || \"Not reported\"}</dd>"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 97,
+    "text": "placeholder=\"Filter columns\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 147,
+    "text": "Sample rows \u00b7 {preview.sample_rows.length}"
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 152,
+    "text": "aria-label=\"Scrollable sample table\""
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 166,
+    "text": "{preview.sample_rows.map((row, index) => ("
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 190,
+    "text": "{preview.sample_rows.length === 0 && ("
+  },
+  {
+    "file": "frontend\\src\\components\\workspace\\TabularPreviewModal.tsx",
+    "line": 191,
+    "text": "<p className=\"meta-copy p-4\">No sample rows available.</p>"
+  }
+]

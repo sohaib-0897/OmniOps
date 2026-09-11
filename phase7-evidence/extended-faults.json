@@ -1,0 +1,26 @@
+{
+  "file_after_db_failure": {
+    "http": 500,
+    "client_has_sql": false,
+    "physical_delta": 1,
+    "db_rows": "0"
+  },
+  "delete_transaction_divergence": {
+    "http": 500,
+    "row_remains": true,
+    "file_remains": false
+  },
+  "real_worker_crash": {
+    "paused_production_attempt_observed": true,
+    "state_after_kill": "ready",
+    "committed_events_after_kill": 0,
+    "recovered_state": "failed",
+    "failure_code": "EVIDENCE_NOT_FOUND",
+    "counts": {
+      "evidence_items": 0,
+      "calculation_records": 0,
+      "verified_claims": 0,
+      "events": 9
+    }
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
-
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Activity, Database, FileText, ArrowLeft } from "lucide-react";
 import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import { useInvestigationStream } from "@/hooks/useInvestigationStream";
 import { apiClient } from "@/lib/api-client";
@@ -11,7 +12,6 @@ import {
   InvestigationSession,
   EvidenceLineageGraph,
 } from "@/types/api";
-
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
 import { FileUploadZone } from "@/components/workspace/FileUploadZone";
 import { SourceDataCatalog } from "@/components/workspace/SourceDataCatalog";
@@ -22,345 +22,339 @@ import { EvidenceLineageDrawer } from "@/components/workspace/EvidenceLineageDra
 import { TabularPreviewModal } from "@/components/workspace/TabularPreviewModal";
 import { SourcePreviewModal } from "@/components/workspace/SourcePreviewModal";
 import {
-  Loader2,
-  Activity,
-  Compass,
-  Database,
-  ArrowRight,
-  TrendingUp,
-  FileSearch,
-  Calculator,
-  Layers,
-  ShieldCheck,
-} from "lucide-react";
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+} from "@/components/ui/Primitives";
 
-type MobileTab = "sources" | "investigation" | "telemetry";
-
-const EXAMPLE_PLAYBOOKS = [
-  {
-    title: "Segment Profit Margin & Churn Correlation",
-    description: "Executes DuckDB SQL across customer datasets to calculate segment margin variance and verify contract terms.",
-    query: "Compute customer churn variance across product segments and identify primary operational margin risk factors.",
-    icon: TrendingUp,
-    modality: "XLSX + CSV",
-  },
-  {
-    title: "Supplier Invoices vs Transcript Audit",
-    description: "Cross-references vendor billing spreadsheets with executive meeting audio transcripts to detect unapproved rate hikes.",
-    query: "Cross-reference supplier invoice spreadsheets with recent executive meeting transcripts to find pricing discrepancies.",
-    icon: FileSearch,
-    modality: "PDF + Audio",
-  },
-  {
-    title: "Q3 Revenue Decline Root Cause Synthesis",
-    description: "Performs full multi-source synthesis, computing exact revenue delta and formulating actionable strategic recovery items.",
-    query: "Analyze why enterprise software revenue declined in Q3, compute segment margin variance, and synthesize strategic actions.",
-    icon: Calculator,
-    modality: "Multi-Modal",
-  },
+type Tab = "sources" | "investigation" | "trace";
+const runtimeStates = [
+  "created",
+  "planning",
+  "ready",
+  "running",
+  "executing",
+  "observing",
+  "verifying",
+  "replanning",
+  "synthesizing",
 ];
-
-export default function WorkspaceDashboard({
+export default function WorkspacePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const resolvedParams = React.use(params);
-  const workspaceId = resolvedParams.id;
-
-  const { workspace, files, tables, isLoading, mutateAll } = useWorkspaceData(workspaceId);
-  const [activeInvestigationId, setActiveInvestigationId] = useState<string | null>(null);
-  const { state: streamState, cancel: cancelInvestigation } = useInvestigationStream(activeInvestigationId);
-
-  const [activeTab, setActiveTab] = useState<MobileTab>("investigation");
-  const [lineageGraph, setLineageGraph] = useState<EvidenceLineageGraph | null>(null);
-
+  const { id } = React.use(params);
+  return <Workspace key={id} workspaceId={id} />;
+}
+function Workspace({ workspaceId }: { workspaceId: string }) {
+  const { workspace, files, tables, isLoading, isError, mutateAll } =
+    useWorkspaceData(workspaceId);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const { state, cancel } = useInvestigationStream(activeId);
+  const [tab, setTab] = useState<Tab>("investigation");
+  const [lineage, setLineage] = useState<EvidenceLineageGraph | null>(null);
+  const [lineageError, setLineageError] = useState<string | null>(null);
+  const [lineageLoading, setLineageLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<SourceDocument | null>(null);
   const [previewTable, setPreviewTable] = useState<TabularDataset | null>(null);
-  const [selectedClaim, setSelectedClaim] = useState<EpistemicClaim | null>(null);
-  const [selectedCitationId, setSelectedCitationId] = useState<string | null>(null);
-
+  const [claim, setClaim] = useState<EpistemicClaim | null>(null);
+  const [citation, setCitation] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submission = useRef(false);
   useEffect(() => {
-    if (activeInvestigationId && (streamState.status === "completed" || selectedClaim || selectedCitationId)) {
-      apiClient
-        .get<EvidenceLineageGraph>(`/investigations/${activeInvestigationId}/evidence`)
-        .then((data) => setLineageGraph(data))
-        .catch((err) => console.error("Failed to load lineage graph:", err));
-    }
-  }, [activeInvestigationId, streamState.status, selectedClaim, selectedCitationId]);
-
-  const handleStartInvestigation = async (objective: string, maxSteps: number) => {
+    const sync = () =>
+      setActiveId(
+        new URLSearchParams(window.location.search).get("investigation"),
+      );
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  const selectInvestigation = (id: string | null) => {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("investigation", id);
+    else url.searchParams.delete("investigation");
+    window.history.pushState(null, "", url.pathname + url.search);
+    setActiveId(id);
+  };
+  const fetchLineage = useCallback(async () => {
+    if (!activeId) return;
+    setLineageLoading(true);
+    setLineageError(null);
     try {
-      setLineageGraph(null);
+      setLineage(
+        await apiClient.get<EvidenceLineageGraph>(
+          `/investigations/${activeId}/evidence`,
+        ),
+      );
+    } catch (err) {
+      setLineageError(
+        err instanceof Error ? err.message : "Provenance could not be loaded.",
+      );
+    } finally {
+      setLineageLoading(false);
+    }
+  }, [activeId]);
+  useEffect(() => {
+    setLineage(null);
+    setClaim(null);
+    setCitation(null);
+  }, [activeId]);
+  useEffect(() => {
+    if (activeId && ["completed", "failed", "cancelled"].includes(state.status))
+      void fetchLineage();
+  }, [activeId, state.status, fetchLineage]);
+  const start = async (objective: string, maxSteps: number) => {
+    if (submission.current) return;
+    submission.current = true;
+    setSubmitting(true);
+    setStartError(null);
+    try {
       const session = await apiClient.post<InvestigationSession>(
         `/workspaces/${workspaceId}/investigations`,
-        { objective, max_steps: maxSteps }
+        { objective, max_steps: maxSteps },
       );
-      setActiveInvestigationId(session.id);
-      setActiveTab("investigation");
+      selectInvestigation(session.id);
+      setTab("investigation");
     } catch (err) {
-      console.error("Failed to start investigation:", err);
+      setStartError(
+        err instanceof Error
+          ? err.message
+          : "Investigation could not be started.",
+      );
+    } finally {
+      submission.current = false;
+      setSubmitting(false);
     }
   };
-
-  const isRunning = ["planning", "running", "verifying", "synthesizing"].includes(streamState.status);
-
-  if (isLoading) {
+  const running = runtimeStates.includes(state.status);
+  const newInvestigation = () => {
+    selectInvestigation(null);
+    setStartError(null);
+    setTab("investigation");
+  };
+  const readyCount = files.filter((file) =>
+    ["ready", "partially_ready"].includes(file.processing_status),
+  ).length;
+  if (isLoading)
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs">
-        <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-        <span>Loading workspace data...</span>
-      </div>
+      <main id="main-content" className="app-container py-8">
+        <LoadingState label="Loading workspace" />
+      </main>
     );
-  }
-
-  const totalSourceCount = (files?.length || 0) + (tables?.length || 0);
-
+  if (!workspace)
+    return (
+      <main
+        id="main-content"
+        className="app-container max-w-2xl space-y-5 py-8"
+      >
+        <Link href="/" className="btn-ghost">
+          <ArrowLeft className="h-4 w-4" />
+          All workspaces
+        </Link>
+        <ErrorState
+          title="Workspace unavailable"
+          message="The workspace could not be loaded. Check your access or try again."
+          onRetry={mutateAll}
+        />
+      </main>
+    );
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col justify-between relative overflow-hidden font-sans selection:bg-zinc-800 selection:text-white">
-      {/* Global Header */}
+    <div className="app-page">
       <WorkspaceHeader
         workspace={workspace}
-        onNewInvestigation={() => {
-          setActiveInvestigationId(null);
-          setLineageGraph(null);
-        }}
+        onNewInvestigation={running ? undefined : newInvestigation}
       />
-
-      {/* Segmented Tab Control for Mobile/Tablet */}
-      <div className="lg:hidden border-b border-zinc-850 bg-zinc-950 p-2 flex items-center justify-around text-xs">
-        <button
-          type="button"
-          onClick={() => setActiveTab("sources")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold transition-all ${
-            activeTab === "sources"
-              ? "bg-white text-black"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>Sources ({totalSourceCount})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("investigation")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold transition-all ${
-            activeTab === "investigation"
-              ? "bg-white text-black"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Investigation</span>
-          {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("telemetry")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold transition-all ${
-            activeTab === "telemetry"
-              ? "bg-white text-black"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5" />
-          <span>Trace ({streamState.steps.length})</span>
-        </button>
-      </div>
-
-      {/* Tripartite Layout */}
-      <div className="flex-1 grid grid-cols-12 overflow-hidden z-10">
-        {/* LEFT PANEL: Data Catalog */}
+      <nav
+        aria-label="Workspace panels"
+        className="border-b border-zinc-800 bg-[#101113] min-[1440px]:hidden"
+      >
+        <div className="app-container flex gap-1">
+          {(
+            [
+              {
+                id: "sources",
+                label: "Sources",
+                count: files.length,
+                icon: Database,
+              },
+              {
+                id: "investigation",
+                label: "Investigation",
+                count: null,
+                icon: FileText,
+              },
+              {
+                id: "trace",
+                label: "Trace",
+                count: state.timeline.length,
+                icon: Activity,
+              },
+            ] as const
+          ).map(({ id, label, count, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              aria-current={tab === id ? "page" : undefined}
+              aria-controls={`panel-${id}`}
+              className={`flex min-h-11 flex-1 items-center justify-center gap-2 border-b-2 px-2 text-xs font-medium sm:flex-none sm:px-5 ${tab === id ? "border-zinc-100 text-zinc-100" : "border-transparent text-zinc-400 hover:text-white"} ${id === "sources" ? "lg:hidden" : ""}`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+              {count != null && (
+                <span className="text-[11px] text-zinc-400">{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
+      <main id="main-content" className="app-container workspace-grid">
         <aside
-          className={`col-span-12 lg:col-span-3 border-r border-zinc-850 p-4 sm:p-5 bg-zinc-950 overflow-y-auto max-h-[calc(100vh-65px)] space-y-5 ${
-            activeTab === "sources" ? "block" : "hidden lg:block"
-          }`}
+          id="panel-sources"
+          aria-label="Workspace sources"
+          className={`${tab === "sources" ? "block" : "hidden"} min-w-0 lg:block`}
         >
-          <FileUploadZone workspaceId={workspaceId} onUploadComplete={mutateAll} />
-          <SourceDataCatalog
-            workspaceId={workspaceId}
-            files={files || []}
-            tables={tables || []}
-            onRefresh={mutateAll}
-            onPreviewFile={(f) => setPreviewFile(f)}
-            onPreviewTable={(t) => setPreviewTable(t)}
-          />
-        </aside>
-
-        {/* CENTER PANEL: Investigation & Report */}
-        <main
-          className={`col-span-12 lg:col-span-6 p-4 sm:p-6 lg:p-7 overflow-y-auto max-h-[calc(100vh-65px)] space-y-5 bg-black ${
-            activeTab === "investigation" ? "block" : "hidden lg:block"
-          }`}
-        >
-          <ObjectiveInput
-            onStartInvestigation={handleStartInvestigation}
-            onCancel={cancelInvestigation}
-            isRunning={isRunning}
-            currentPhase={streamState.status}
-            activitySummary={streamState.activitySummary}
-          />
-
-          {isRunning ? (
-            <div className="border border-zinc-800 rounded-2xl p-6 bg-zinc-950 space-y-4 text-center">
-              <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center mx-auto">
-                <Compass className="w-5 h-5 animate-spin" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
-                  Evidence-Grounded Multi-Source Investigation in Progress
-                </h3>
-                <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
-                  Executing analytical DAG, computing metrics in DuckDB, and verifying claims against primary sources.
-                </p>
-              </div>
-
-              {/* Progress Stage Cards */}
-              <div className="grid grid-cols-3 gap-2.5 max-w-md mx-auto text-xs pt-1">
-                <div className={`p-3 rounded-xl border text-left transition-all ${
-                  ["planning", "running", "verifying", "synthesizing"].includes(streamState.status)
-                    ? "bg-zinc-900 border-zinc-700 text-white font-bold"
-                    : "bg-zinc-950 border-zinc-850 text-zinc-600"
-                }`}>
-                  <span className="text-[9px] uppercase font-bold block text-zinc-400">Stage 1</span>
-                  <span>Planning DAG</span>
-                </div>
-                <div className={`p-3 rounded-xl border text-left transition-all ${
-                  ["running", "verifying", "synthesizing"].includes(streamState.status)
-                    ? "bg-zinc-900 border-zinc-700 text-white font-bold"
-                    : "bg-zinc-950 border-zinc-850 text-zinc-600"
-                }`}>
-                  <span className="text-[9px] uppercase font-bold block text-zinc-400">Stage 2</span>
-                  <span>Execution</span>
-                </div>
-                <div className={`p-3 rounded-xl border text-left transition-all ${
-                  ["verifying", "synthesizing"].includes(streamState.status)
-                    ? "bg-zinc-900 border-zinc-700 text-white font-bold"
-                    : "bg-zinc-950 border-zinc-850 text-zinc-600"
-                }`}>
-                  <span className="text-[9px] uppercase font-bold block text-zinc-400">Stage 3</span>
-                  <span>Synthesis</span>
-                </div>
-              </div>
-            </div>
-          ) : streamState.finalResponse ? (
-            <ExecutiveReportView
-              report={streamState.finalResponse}
-              onInspectClaim={(claim) => {
-                setSelectedClaim(claim);
-                setSelectedCitationId(null);
-              }}
-              onInspectCitation={(citId) => {
-                setSelectedCitationId(citId);
-              }}
+          <div className="space-y-5 lg:border-r lg:border-zinc-800 lg:pr-5">
+            <FileUploadZone
+              workspaceId={workspaceId}
+              onUploadComplete={mutateAll}
             />
-          ) : (
-            /* Playbooks & Workflow Guide */
-            <div className="border border-zinc-800 bg-zinc-950 rounded-2xl p-5 sm:p-6 space-y-5">
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-zinc-850">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center font-bold">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white tracking-tight">
-                      Analytical Playbooks
-                    </h3>
-                    <p className="text-xs text-zinc-400">
-                      Select an example playbook or submit your custom query above
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[10px] text-zinc-400 font-mono font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 rounded">
-                  Evidence Referenced
-                </span>
-              </div>
-
-              {/* Playbook Cards Grid */}
-              <div className="grid sm:grid-cols-3 gap-3">
-                {EXAMPLE_PLAYBOOKS.map((playbook, idx) => {
-                  const Icon = playbook.icon;
-                  return (
-                    <div
-                      key={idx}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleStartInvestigation(playbook.query, 10)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleStartInvestigation(playbook.query, 10);
-                        }
-                      }}
-                      className="group p-4 rounded-xl border border-zinc-850 bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-700 cursor-pointer transition-all flex flex-col justify-between space-y-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center group-hover:text-white transition-colors">
-                            <Icon className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-400">
-                            {playbook.modality}
-                          </span>
-                        </div>
-                        <h4 className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors leading-snug">
-                          {playbook.title}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">
-                          {playbook.description}
-                        </p>
-                      </div>
-
-                      <div className="pt-2 border-t border-zinc-850 flex items-center justify-between text-xs font-bold text-zinc-300 group-hover:text-white">
-                        <span>Run</span>
-                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 3-Step Workflow Strip */}
-              <div className="p-3 rounded-xl bg-zinc-900/50 border border-zinc-850 grid sm:grid-cols-3 gap-3 text-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded bg-zinc-800 text-zinc-300 font-bold font-mono text-[10px] flex items-center justify-center shrink-0 border border-zinc-700">
-                    1
-                  </div>
-                  <span className="text-zinc-300 font-semibold">Data Ingestion</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded bg-zinc-800 text-zinc-300 font-bold font-mono text-[10px] flex items-center justify-center shrink-0 border border-zinc-700">
-                    2
-                  </div>
-                  <span className="text-zinc-300 font-semibold">DAG Execution</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded bg-zinc-800 text-zinc-300 font-bold font-mono text-[10px] flex items-center justify-center shrink-0 border border-zinc-700">
-                    3
-                  </div>
-                  <span className="text-zinc-300 font-semibold">Lineage Verification</span>
-                </div>
-              </div>
+            <div className="border-t border-zinc-800 pt-5">
+              <SourceDataCatalog
+                workspaceId={workspaceId}
+                files={files}
+                tables={tables}
+                onRefresh={mutateAll}
+                onPreviewFile={setPreviewFile}
+                onPreviewTable={setPreviewTable}
+              />
             </div>
-          )}
-        </main>
-
-        {/* RIGHT PANEL: Stepper & Telemetry */}
-        <aside
-          className={`col-span-12 lg:col-span-3 border-l border-zinc-850 p-4 sm:p-5 bg-zinc-950 overflow-y-auto max-h-[calc(100vh-65px)] space-y-4 ${
-            activeTab === "telemetry" ? "block" : "hidden lg:block"
-          }`}
-        >
-          <LiveActivityStepper
-            streamState={streamState}
-            onCancel={cancelInvestigation}
-          />
+          </div>
         </aside>
-      </div>
-
-      {/* MODALS & DRAWERS */}
+        <section
+          id="panel-investigation"
+          aria-label="Investigation"
+          className={`${tab === "investigation" ? "block" : "hidden"} min-w-0 ${tab === "sources" ? "lg:block" : ""} min-[1440px]:block`}
+        >
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-zinc-400">
+                {readyCount} of {files.length} sources ready or partially ready
+              </p>
+              {activeId && (
+                <span className="mono-copy" title={activeId}>
+                  Run {activeId.slice(0, 8)}
+                </span>
+              )}
+            </div>
+            {isError && (
+              <ErrorState
+                title="Some workspace data is unavailable"
+                message="Source counts may be incomplete. Retry to reload the catalog."
+                onRetry={mutateAll}
+              />
+            )}
+            {activeId ? (
+              <section className="surface p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="eyebrow">Investigation objective</p>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={state.status} />
+                    {running && (
+                      <button
+                        className="btn-destructive"
+                        onClick={() => void cancel()}
+                      >
+                        Cancel investigation
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <h1 className="mt-3 break-words text-base font-medium leading-7 text-zinc-200">
+                  {state.objective || "Loading investigation"}
+                </h1>
+              </section>
+            ) : (
+              <ObjectiveInput
+                onStartInvestigation={start}
+                onCancel={cancel}
+                isRunning={running}
+                submitting={submitting}
+              />
+            )}
+            {startError && (
+              <ErrorState
+                title="Could not start investigation"
+                message={startError}
+              />
+            )}
+            {state.errorMessage && (
+              <ErrorState
+                title={
+                  state.status === "failed"
+                    ? "Investigation failed"
+                    : "Runtime notice"
+                }
+                message={state.errorMessage}
+              />
+            )}
+            {state.finalResponse ? (
+              <ExecutiveReportView
+                report={state.finalResponse}
+                onInspectClaim={(item) => {
+                  setClaim(item);
+                  setCitation(null);
+                }}
+                onInspectCitation={(id) => {
+                  setCitation(id);
+                  setClaim(null);
+                }}
+              />
+            ) : activeId ? (
+              <section className="surface p-5">
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={state.status} />
+                  <h2 className="section-title">
+                    {running
+                      ? "Investigation in progress"
+                      : state.status === "cancelled"
+                        ? "Investigation cancelled"
+                        : state.status === "failed"
+                          ? "No final report produced"
+                          : "No final report available"}
+                  </h2>
+                </div>
+                <p className="body-copy mt-3">
+                  {running
+                    ? "Operational events appear in the trace as they are persisted. The report will appear here when synthesis completes."
+                    : "Persisted operational history remains available in the trace."}
+                </p>
+                <button
+                  className="btn-secondary mt-4 min-[1440px]:hidden"
+                  onClick={() => setTab("trace")}
+                >
+                  View runtime trace
+                </button>
+              </section>
+            ) : (
+              <EmptyState
+                title="Your findings will appear here"
+                description="Upload relevant sources and run a focused investigation. Inspect each finding through its citations and recorded provenance."
+              />
+            )}
+          </div>
+        </section>
+        <aside
+          id="panel-trace"
+          aria-label="Investigation trace"
+          className={`${tab === "trace" ? "block" : "hidden"} min-w-0 min-[1440px]:block`}
+        >
+          <LiveActivityStepper streamState={state} onCancel={cancel} />
+        </aside>
+      </main>
       <TabularPreviewModal
         table={previewTable}
         onClose={() => setPreviewTable(null)}
@@ -370,12 +364,26 @@ export default function WorkspaceDashboard({
         onClose={() => setPreviewFile(null)}
       />
       <EvidenceLineageDrawer
-        claim={selectedClaim}
-        citationId={selectedCitationId}
-        lineageGraph={lineageGraph}
+        claim={claim}
+        citationId={citation}
+        lineageGraph={lineage}
+        loading={lineageLoading}
+        error={lineageError}
+        onRetry={() => void fetchLineage()}
         onClose={() => {
-          setSelectedClaim(null);
-          setSelectedCitationId(null);
+          setClaim(null);
+          setCitation(null);
+        }}
+        onInspectSource={(id) => {
+          const file = files.find((item) => item.id === id);
+          if (file) {
+            setClaim(null);
+            setCitation(null);
+            setPreviewFile(file);
+          } else
+            setLineageError(
+              "This source is no longer available in the workspace catalog.",
+            );
         }}
       />
     </div>

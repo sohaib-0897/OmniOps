@@ -1,0 +1,27 @@
+===============================================================
+             OMNIOPS BENCHMARK EVALUATION RESULTS              
+===============================================================
+Total Scenarios Tested:    15
+Passed Scenarios:          15 / 15 (100.0%)
+Mean Factual Precision:    NOT_MEASURED
+Mean Citation Precision:   NOT_MEASURED
+Mean Hallucination Rate:   NOT_MEASURED
+Mean Scenario Latency:     251.3 ms
+---------------------------------------------------------------
+[SCENARIO-01] Contradictory Sources (Ledger vs Memo): PASSED (784ms)
+[SCENARIO-02] Tabular Mathematical Calculation: PASSED (445ms)
+[SCENARIO-03] Deterministic Planning: PASSED (0ms)
+[SCENARIO-04] Missing Data Signaling: PASSED (0ms)
+[SCENARIO-05] Deterministic Calculation-Only Report: PASSED (0ms)
+[SCENARIO-06] Calculation Hash Reproducibility: PASSED (2411ms)
+[SCENARIO-07] Code Injection Defense: PASSED (0ms)
+[SCENARIO-08] Inference Proposal: PASSED (0ms)
+[SCENARIO-09] Recommendation References: PASSED (0ms)
+[SCENARIO-10] DuckDB Prohibited Operations: PASSED (0ms)
+[SCENARIO-11] Filename Traversal Defense: PASSED (0ms)
+[SCENARIO-12] SSRF Private Address Defense: PASSED (0ms)
+[SCENARIO-13] Python Introspection Defense: PASSED (1ms)
+[SCENARIO-14] Magic Byte Validation: PASSED (0ms)
+[SCENARIO-15] DuckDB Serialization: PASSED (128ms)
+===============================================================
+

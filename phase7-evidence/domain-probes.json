@@ -1,0 +1,34 @@
+{
+  "evidence": {
+    "writers": 5,
+    "errors": [],
+    "unique_ids": 1
+  },
+  "calculation": {
+    "writers": 5,
+    "errors": [],
+    "unique_ids": 1
+  },
+  "claim": {
+    "writers": 5,
+    "errors": [],
+    "unique_ids": 1
+  },
+  "event": {
+    "writers": 5,
+    "errors": [],
+    "unique_ids": 1
+  },
+  "source_deletion": {
+    "valid_before": true,
+    "valid_after": false,
+    "persisted_claim_status": "VERIFIED",
+    "dangling_citations": [
+      "f27943eb-c33b-48ef-b84d-434286056729"
+    ]
+  },
+  "stale_finalization": {
+    "authoritative_owner": "new-finalizer",
+    "stored_winner": "stale"
+  }
+}

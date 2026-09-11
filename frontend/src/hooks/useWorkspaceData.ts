@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import { useEffect } from "react";
 import { apiClient } from "@/lib/api-client";
 import { Workspace, SourceDocument, TabularDataset } from "@/types/api";
 
@@ -13,7 +14,7 @@ export function useWorkspaceData(workspaceId: string | null) {
     mutate: mutateWorkspace,
   } = useSWR<Workspace>(
     workspaceId ? `/workspaces/${workspaceId}` : null,
-    fetcher
+    fetcher,
   );
 
   const {
@@ -22,7 +23,15 @@ export function useWorkspaceData(workspaceId: string | null) {
     mutate: mutateFiles,
   } = useSWR<SourceDocument[]>(
     workspaceId ? `/workspaces/${workspaceId}/files` : null,
-    fetcher
+    fetcher,
+    {
+      refreshInterval: (items) =>
+        items?.some((file) =>
+          ["pending", "processing"].includes(file.processing_status),
+        )
+          ? 2500
+          : 0,
+    },
   );
 
   const {
@@ -31,8 +40,21 @@ export function useWorkspaceData(workspaceId: string | null) {
     mutate: mutateTables,
   } = useSWR<TabularDataset[]>(
     workspaceId ? `/workspaces/${workspaceId}/tables` : null,
-    fetcher
+    fetcher,
   );
+
+  const readySources = (files || [])
+    .filter((file) =>
+      ["ready", "partially_ready"].includes(file.processing_status),
+    )
+    .map((file) => file.id)
+    .join(",");
+  useEffect(() => {
+    if (readySources) {
+      void mutateTables();
+      void mutateWorkspace();
+    }
+  }, [readySources, mutateTables, mutateWorkspace]);
 
   return {
     workspace,

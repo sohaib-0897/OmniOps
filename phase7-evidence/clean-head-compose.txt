@@ -1,0 +1,2 @@
+
+open C:\Users\Sohaib\Desktop\OmniOps\.ui-qa\phase7-clean-head\docker-compose.prod.yml: The system cannot find the file specified.

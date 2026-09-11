@@ -1,0 +1,63 @@
+services:
+  migrate:
+    image: ${OMNIOPS_BACKEND_IMAGE:?set immutable backend image}
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment: &production_environment
+      DATABASE_URL: ${DATABASE_URL:?set managed PostgreSQL URL}
+      SECRET_KEY: ${SECRET_KEY:?set JWT signing secret}
+      ENVIRONMENT: production
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: lax
+      CORS_ORIGINS: ${CORS_ORIGINS:?set JSON origin list}
+      SANDBOX_EXECUTION_MODE: remote
+      SANDBOX_RUNNER_URL: ${SANDBOX_RUNNER_URL:?set external runner URL}
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set runner token}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    restart: "no"
+  backend:
+    image: ${OMNIOPS_BACKEND_IMAGE:?set immutable backend image}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=256m"]
+    volumes: ["omniops_storage:/app/storage"]
+    environment: *production_environment
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { cpus: "0.25", memory: 256M }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  frontend:
+    image: ${OMNIOPS_FRONTEND_IMAGE:?set immutable frontend image}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    depends_on: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+  worker:
+    image: ${OMNIOPS_BACKEND_IMAGE:?set immutable backend image}
+    command: ["python", "-m", "app.worker"]
+    # The worker has no HTTP listener. Check its process identity instead of
+    # inheriting the web image's HTTP liveness probe.
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; assert b'app.worker' in Path('/proc/1/cmdline').read_bytes()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=256m"]
+    volumes: ["omniops_storage:/app/storage"]
+    environment: *production_environment
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+volumes:
+  omniops_storage:
+    external: true

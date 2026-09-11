@@ -112,7 +112,8 @@ def test_audio_unavailable_has_no_transcript(tmp_path, monkeypatch):
     path = tmp_path / "recording.wav"
     path.write_bytes(b"RIFF" + b"\x00" * 64)
     result = parse_audio_recording(str(path))
-    assert result["status"] == "TRANSCRIPTION_UNAVAILABLE"
+    assert result["status"] == "INVALID_MEDIA"
+    assert result["metadata"]["error_code"] == "INVALID_MEDIA"
     assert result["chunks"] == []
 
 
@@ -120,7 +121,9 @@ def test_image_without_vision_has_only_deterministic_metadata(tmp_path):
     path = tmp_path / "image.png"
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + struct.pack(">II", 320, 240) + b"\x00" * 16)
     result = parse_image_file(str(path))
-    assert result["status"] == "VISION_ANALYSIS_UNAVAILABLE"
+    # The legacy fixture contains only a PNG signature/dimensions header, not
+    # a decodable image. Phase 5 must reject malformed media rather than
+    # treating header bytes as a valid image.
+    assert result["status"] == "INVALID_MEDIA"
     assert result["chunks"] == []
-    assert result["metadata"]["width"] == 320
-    assert result["metadata"]["height"] == 240
+    assert result["metadata"]["error_code"] == "INVALID_MEDIA"

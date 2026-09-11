@@ -1,0 +1,102 @@
+{
+  "final_image_remote_sandbox": {
+    "safe": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": 42,
+      "stdout_bytes": 0,
+      "duration_ms": 1127
+    },
+    "secret_environment": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": [],
+      "stdout_bytes": 0,
+      "duration_ms": 1233
+    },
+    "host_paths": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": {
+        "/app/.env": false,
+        "/host/.env": false,
+        "/var/run/docker.sock": false
+      },
+      "stdout_bytes": 0,
+      "duration_ms": 1398
+    },
+    "privileges": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": {
+        "uid": 65532,
+        "capabilities": [
+          "CapEff:\t0000000000000000",
+          "NoNewPrivs:\t1"
+        ]
+      },
+      "stdout_bytes": 0,
+      "duration_ms": 1316
+    },
+    "readonly": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": false,
+      "stdout_bytes": 0,
+      "duration_ms": 1109
+    },
+    "network": {
+      "success": true,
+      "status": "success",
+      "error_code": null,
+      "output": false,
+      "stdout_bytes": 0,
+      "duration_ms": 1524
+    },
+    "cpu": {
+      "success": false,
+      "status": "infrastructure_failure",
+      "error_code": "SANDBOX_INFRASTRUCTURE_ERROR",
+      "output": null,
+      "stdout_bytes": 0,
+      "duration_ms": 0
+    },
+    "memory": {
+      "success": false,
+      "status": "infrastructure_failure",
+      "error_code": "SANDBOX_INFRASTRUCTURE_ERROR",
+      "output": null,
+      "stdout_bytes": 0,
+      "duration_ms": 2953
+    },
+    "output": {
+      "success": false,
+      "status": "resource_limit",
+      "error_code": "SANDBOX_OUTPUT_LIMIT",
+      "output": 1,
+      "stdout_bytes": 65536,
+      "duration_ms": 1453
+    },
+    "processes": {
+      "success": false,
+      "status": "user_code_failure",
+      "error_code": "SANDBOX_USER_CODE_ERROR",
+      "output": null,
+      "stdout_bytes": 0,
+      "duration_ms": 2199
+    }
+  },
+  "runner_auth_schema": {
+    "missing": 401,
+    "override": 422
+  },
+  "orphan_sandbox_jobs": [
+    "omniops-sandbox-runner-1",
+    "omniops-sandbox-image-1"
+  ]
+}

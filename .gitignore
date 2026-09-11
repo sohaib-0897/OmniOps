@@ -16,3 +16,16 @@ frontend/playwright-report/
 __pycache__/
 **/__pycache__/
 *.pyc
+
+# Local environments and private laboratory artifacts
+.venv/
+**/.venv/
+.ui-qa/
+.env.*
+!.env.example
+backend/storage/temp/
+*.dump
+phase7-evidence/extended-browser-context.json
+phase7-evidence/provider-chain.json
+phase7-evidence/provider-smoke.json
+phase7-evidence/test-media/

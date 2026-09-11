@@ -46,6 +46,7 @@ class ProcessingStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     READY = "ready"
+    PARTIALLY_READY = "partially_ready"
     FAILED = "failed"
 
 class SourceDocument(Base, BaseMixin):

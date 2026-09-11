@@ -1,0 +1,52 @@
+{
+  "db_down": {
+    "health": 200,
+    "readiness": 503,
+    "checks": {
+      "database": "unavailable",
+      "sandbox_runner": "ready",
+      "multimodal_capabilities": {
+        "pdf_native_text": "AVAILABLE",
+        "pdf_ocr": "AVAILABLE",
+        "image_ocr": "AVAILABLE",
+        "image_semantic_vision": "UNAVAILABLE",
+        "audio_transcription": "UNAVAILABLE",
+        "audio_timestamps": "UNAVAILABLE",
+        "audio_diarization": "NOT_SUPPORTED"
+      }
+    }
+  },
+  "wrong_runner_token": {
+    "health": 200,
+    "readiness": 200,
+    "checks": {
+      "database": "ready",
+      "pgvector": "ready",
+      "migrations": "ready",
+      "sandbox_runner": "ready",
+      "multimodal_capabilities": {
+        "pdf_native_text": "AVAILABLE",
+        "pdf_ocr": "AVAILABLE",
+        "image_ocr": "AVAILABLE",
+        "image_semantic_vision": "UNAVAILABLE",
+        "audio_transcription": "UNAVAILABLE",
+        "audio_timestamps": "UNAVAILABLE",
+        "audio_diarization": "NOT_SUPPORTED"
+      }
+    }
+  },
+  "complete_log_scan": {
+    "stdout_and_stderr": true,
+    "bytes": 449870,
+    "known_credentials_found": [],
+    "jwt_literal": false,
+    "refresh_literal": false,
+    "sql_error_text": true,
+    "refresh_replay_event": true,
+    "logs_exported": false
+  },
+  "final_health": {
+    "a": 200,
+    "b": 200
+  }
+}

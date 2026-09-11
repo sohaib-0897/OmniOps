@@ -1,0 +1,53 @@
+TAP version 13
+# Subtest: Missing verification is never rendered as verified
+ok 1 - Missing verification is never rendered as verified
+  ---
+  duration_ms: 83.4523
+  type: 'test'
+  ...
+# Subtest: Rejected claim keeps its rejected status
+ok 2 - Rejected claim keeps its rejected status
+  ---
+  duration_ms: 2.7834
+  type: 'test'
+  ...
+# Subtest: Metric summary does not parse dates or values out of prose
+ok 3 - Metric summary does not parse dates or values out of prose
+  ---
+  duration_ms: 0.7797
+  type: 'test'
+  ...
+# Subtest: Partial ingestion and failed runtime have textual status indicators
+ok 4 - Partial ingestion and failed runtime have textual status indicators
+  ---
+  duration_ms: 1.0804
+  type: 'test'
+  ...
+# Subtest: Report text is escaped, not interpreted as HTML
+ok 5 - Report text is escaped, not interpreted as HTML
+  ---
+  duration_ms: 1.3135
+  type: 'test'
+  ...
+# Subtest: Operational trace excludes reasoning and raw tool content
+ok 6 - Operational trace excludes reasoning and raw tool content
+  ---
+  duration_ms: 2.4814
+  type: 'test'
+  ...
+# Subtest: Numbers and missing durations are formatted without inventing measurements
+ok 7 - Numbers and missing durations are formatted without inventing measurements
+  ---
+  duration_ms: 1.3667
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1126.145
+

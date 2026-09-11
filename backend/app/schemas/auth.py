@@ -4,12 +4,12 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 class UserRegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8, description="Minimum 8 characters")
+    password: str = Field(..., min_length=12, max_length=72, description="12–72 characters")
     full_name: str = Field(..., min_length=2)
 
 class UserLoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=72)
 
 class TokenResponse(BaseModel):
     access_token: str

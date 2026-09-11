@@ -50,7 +50,12 @@ export interface SourceDocument {
   byte_size: number;
   sha256_hash: string;
   modality: "pdf" | "docx" | "spreadsheet" | "audio" | "image" | "text" | "web";
-  processing_status: "pending" | "processing" | "ready" | "failed";
+  processing_status:
+    | "pending"
+    | "processing"
+    | "ready"
+    | "partially_ready"
+    | "failed";
   error_message?: string;
   doc_metadata: Record<string, any>;
   created_at: string;
@@ -122,7 +127,12 @@ export interface AgentStep {
 export interface EpistemicClaim {
   claim_id: string;
   statement: string;
-  epistemic_type: "fact" | "calculation" | "inference" | "assumption" | "recommendation";
+  epistemic_type:
+    | "fact"
+    | "calculation"
+    | "inference"
+    | "assumption"
+    | "recommendation";
   confidence_score: number | null;
   citations: string[];
   calculation_ids: string[];
@@ -154,8 +164,26 @@ export interface InvestigationSession {
   workspace_id: string;
   user_id: string;
   objective: string;
-  status: "planning" | "running" | "verifying" | "synthesizing" | "completed" | "failed" | "cancelled";
-  current_state?: "created" | "planning" | "ready" | "executing" | "observing" | "verifying" | "replanning" | "synthesizing" | "completed" | "failed" | "cancelled";
+  status:
+    | "planning"
+    | "running"
+    | "verifying"
+    | "synthesizing"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  current_state?:
+    | "created"
+    | "planning"
+    | "ready"
+    | "executing"
+    | "observing"
+    | "verifying"
+    | "replanning"
+    | "synthesizing"
+    | "completed"
+    | "failed"
+    | "cancelled";
   plan_version?: number;
   failure_code?: string;
   failure_message?: string;

@@ -17,27 +17,18 @@ logger = logging.getLogger(__name__)
 class GeminiProvider(BaseLLMClient):
     """Google Gemini REST API provider using structured JSON outputs."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.8-flash"):
         self.api_key = api_key
         self.model = model
-        self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        self.endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
     async def _call_gemini(self, system_instruction: str, prompt: str) -> str:
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
         payload = {
-            "system_instruction": {
-                "parts": [{"text": system_instruction}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": prompt}]
-                }
-            ],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.1
-            }
+            "model": self.model,
+            "system_instruction": system_instruction,
+            "input": prompt,
+            "response_format": {"type": "text", "mime_type": "application/json"},
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -49,10 +40,14 @@ class GeminiProvider(BaseLLMClient):
             if resp.status_code != 200:
                 raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", f"Gemini returned HTTP {resp.status_code}.")
             data = resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates or "content" not in candidates[0]:
-                raise ValueError(f"Gemini returned empty candidate response: {data}")
-            return candidates[0]["content"]["parts"][0]["text"]
+            output_text = data.get("output_text")
+            if isinstance(output_text, str) and output_text.strip():
+                return output_text.strip()
+            for step in data.get("steps", []):
+                for content in step.get("content", []) if isinstance(step, dict) else []:
+                    if isinstance(content, dict) and isinstance(content.get("text"), str) and content["text"].strip():
+                        return content["text"].strip()
+            raise ValueError("Gemini returned empty interaction response")
 
     async def generate_investigation_plan(
         self,

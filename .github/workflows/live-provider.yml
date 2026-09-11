@@ -1,0 +1,16 @@
+name: Live provider verification
+on:
+  workflow_dispatch:
+  schedule: [{ cron: "17 3 * * 1" }]
+permissions: { contents: read }
+jobs:
+  provider-smoke:
+    runs-on: ubuntu-latest
+    environment: live-provider
+    env: { GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}", ENVIRONMENT: test }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r backend/requirements.txt
+      - run: python -m pytest backend/tests/test_phase5_gemini_provider_contract.py -q

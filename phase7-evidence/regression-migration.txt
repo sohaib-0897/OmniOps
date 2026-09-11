@@ -1,0 +1,14 @@
+
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 20260830_baseline, Baseline schema before Phase 1.
+INFO  [alembic.runtime.migration] Running upgrade 20260830_baseline -> 20260902_phase1, Phase 1 evidence contract.
+INFO  [alembic.runtime.migration] Running upgrade 20260902_phase1 -> 20260903_phase2, PostgreSQL-native pgvector and full-text hybrid retrieval.
+INFO  [alembic.runtime.migration] Running upgrade 20260903_phase2 -> 20260904_phase3, Durable Phase 3 agent runtime persistence.
+INFO  [alembic.runtime.migration] Running upgrade 20260904_phase3 -> 20260905_phase3_inputs, Persist validated plan-step inputs.
+INFO  [alembic.runtime.migration] Running upgrade 20260905_phase3_inputs -> 20260906_phase35_runtime, Phase 3.5 recovery, idempotency, and contradiction persistence.
+INFO  [alembic.runtime.migration] Running upgrade 20260906_phase35_runtime -> 20260907_phase36_idempotency, Phase 3.6 logical output/event idempotency and worker claiming support.
+INFO  [alembic.runtime.migration] Running upgrade 20260907_phase36_idempotency -> 20260908_phase38_contra_id, Add deterministic contradiction identity.
+INFO  [alembic.runtime.migration] Running upgrade 20260908_phase38_contra_id -> 20260909_phase38_synth, Stable final synthesis identity.
+INFO  [alembic.runtime.migration] Running upgrade 20260909_phase38_synth -> 20260910_phase38_replan, Stable logical replan identity.
+INFO  [alembic.runtime.migration] Running upgrade 20260910_phase38_replan -> 20260911_phase6_sessions, Phase 6 durable browser sessions and shared rate limits.

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add backend directory to sys.path
@@ -17,7 +18,7 @@ from httpx import AsyncClient, ASGITransport
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.security import create_access_token, get_password_hash
-from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole
+from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole, UserSession
 from app.main import app
 
 # Set test environment
@@ -93,6 +94,9 @@ async def test_workspace(db_session: AsyncSession, test_user: User) -> Workspace
     return ws
 
 @pytest_asyncio.fixture(scope="function")
-def auth_headers(test_user: User) -> dict:
-    token = create_access_token(subject=test_user.id)
+async def auth_headers(test_user: User, db_session: AsyncSession) -> dict:
+    now = datetime.now(timezone.utc)
+    session = UserSession(user_id=test_user.id, expires_at=now + timedelta(days=1), last_used_at=now)
+    db_session.add(session); await db_session.commit()
+    token = create_access_token(subject=test_user.id, session_id=session.id)
     return {"Authorization": f"Bearer {token}"}

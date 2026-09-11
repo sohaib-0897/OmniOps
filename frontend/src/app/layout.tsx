@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OmniOps — Evidence-Grounded Business Intelligence Platform",
-  description: "Evidence-grounded investigation workspace for enterprise business intelligence.",
+  title: "OmniOps - Evidence-grounded intelligence",
+  description:
+    "A focused workspace for investigating business questions with traceable evidence.",
 };
 
 export default function RootLayout({
@@ -13,10 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body
-        suppressHydrationWarning
-        className="min-h-screen bg-[#07090e] text-slate-100 antialiased selection:bg-blue-500/20 selection:text-blue-200"
-      >
+      <body className="min-h-screen text-zinc-100 antialiased">
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
         {children}
       </body>
     </html>

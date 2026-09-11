@@ -7,9 +7,11 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.api.v1.router import api_v1_router
 from app.schemas.common import ResponseEnvelope, ErrorDetail
+from app.core.observability import request_observability
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_production_configuration()
     # SQLite development remains convenient; PostgreSQL schemas are migration-only.
     if settings.DATABASE_URL.startswith("sqlite"):
         async with engine.begin() as conn:
@@ -35,6 +37,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(request_observability)
 
 # Exception Handlers: Standardize Error Envelopes
 @app.exception_handler(RequestValidationError)
@@ -69,7 +72,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     payload["detail"] = detail_msg
     return JSONResponse(
         status_code=exc.status_code,
-        content=payload
+        content=payload,
+        headers=exc.headers
     )
 
 @app.exception_handler(Exception)

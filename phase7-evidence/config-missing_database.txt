@@ -1,0 +1,24 @@
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/app/app/main.py", line 7, in <module>
+    from app.core.database import engine, Base
+  File "/app/app/core/database.py", line 19, in <module>
+    engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+    sync_engine = _create_engine(url, **kw)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in create_engine
+  File "/opt/venv/lib/python3.12/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/sqlalchemy/engine/create.py", line 564, in create_engine
+    u = _url.make_url(url)
+        ^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/sqlalchemy/engine/url.py", line 856, in make_url
+    return _parse_url(name_or_url)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/sqlalchemy/engine/url.py", line 922, in _parse_url
+    raise exc.ArgumentError(
+sqlalchemy.exc.ArgumentError: Could not parse SQLAlchemy URL from given URL string

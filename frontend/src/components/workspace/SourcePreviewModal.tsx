@@ -1,170 +1,187 @@
 "use client";
-
-import React, { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { SourceDocument, DocumentChunk } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
-import { X, FileText, Loader2, Bookmark, Search, Copy, Check } from "lucide-react";
+import { formatDuration } from "@/lib/utils";
+import { Dialog } from "@/components/ui/Dialog";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+} from "@/components/ui/Primitives";
 
-interface Props {
+export function SourcePreviewModal({
+  file,
+  onClose,
+}: {
   file: SourceDocument | null;
   onClose: () => void;
-}
-
-export function SourcePreviewModal({ file, onClose }: Props) {
+}) {
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
   const [loading, setLoading] = useState(false);
-  const [chunkSearch, setChunkSearch] = useState("");
-  const [copiedChunkId, setCopiedChunkId] = useState<string | null>(null);
-
+  const [query, setQuery] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!file) {
-      setChunks([]);
-      return;
-    }
-
+    let alive = true;
+    setChunks([]);
+    setQuery("");
+    setCopied(null);
+    setError(null);
+    if (!file) return;
     setLoading(true);
     apiClient
-      .get<DocumentChunk[]>(`/workspaces/${file.workspace_id}/files/${file.id}/preview`)
-      .then((data) => setChunks(data))
-      .catch((err) => console.error("Failed to load chunks:", err))
-      .finally(() => setLoading(false));
-  }, [file]);
-
-  if (!file) return null;
-
-  const filteredChunks = chunks.filter((c) =>
-    c.content.toLowerCase().includes(chunkSearch.toLowerCase())
+      .get<DocumentChunk[]>(
+        `/workspaces/${file.workspace_id}/files/${file.id}/preview`,
+      )
+      .then((data) => {
+        if (alive) setChunks(data);
+      })
+      .catch((err) => {
+        if (alive)
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Extracted content could not be loaded.",
+          );
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [file, retry]);
+  const visible = useMemo(
+    () =>
+      chunks.filter((chunk) =>
+        chunk.content.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [chunks, query],
   );
-
-  const handleCopyChunk = async (chunk: DocumentChunk) => {
+  const copy = async (chunk: DocumentChunk) => {
     try {
       await navigator.clipboard.writeText(chunk.content);
-      setCopiedChunkId(chunk.id);
-      setTimeout(() => setCopiedChunkId(null), 2000);
-    } catch (err) {
-      console.error("Failed to copy chunk:", err);
+      setCopied(chunk.id);
+    } catch {
+      setError(
+        "Copy is unavailable. Select the excerpt text and copy it manually.",
+      );
     }
   };
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="source-modal-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 font-sans cursor-pointer"
+    <Dialog
+      open={Boolean(file)}
+      onClose={onClose}
+      title={file?.file_name || "Source preview"}
+      description="Extracted content and recorded source locations"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[85vh] shadow-2xl flex flex-col overflow-hidden cursor-default"
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-zinc-850 flex items-center justify-between bg-black">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center font-bold">
-              <FileText className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 id="source-modal-title" className="text-sm font-bold text-white">{file.file_name}</h3>
-              <p className="text-[11px] text-zinc-400 uppercase font-mono">
-                {file.modality} • {chunks.length} Extracted Semantic Chunks
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close source preview"
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Search Bar */}
-        {chunks.length > 2 && (
-          <div className="px-5 pt-3 pb-1">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
-              <input
-                type="text"
-                placeholder="Search extracted chunk text..."
-                value={chunkSearch}
-                onChange={(e) => setChunkSearch(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600"
-              />
-            </div>
+      <div className="space-y-4">
+        {file && (
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge status={file.processing_status} />
+            <span className="meta-copy capitalize">
+              {file.modality} · {chunks.length} {chunks.length === 1 ? "excerpt" : "excerpts"}
+            </span>
           </div>
         )}
-
-        {/* Chunks List */}
-        <div className="p-5 flex-1 overflow-y-auto space-y-3 text-xs">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 text-zinc-500">
-              <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-              <span>Loading extracted document chunks...</span>
-            </div>
-          ) : filteredChunks.length === 0 ? (
-            <p className="text-zinc-500 italic text-center py-12">
-              {chunkSearch ? "No matching chunks found for search query." : "No extracted text chunks found."}
-            </p>
-          ) : (
-            filteredChunks.map((chunk) => (
-              <div
-                key={chunk.id}
-                className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-2"
-              >
-                <div className="flex items-center justify-between text-xs text-zinc-400 font-mono flex-wrap gap-2">
-                  <span className="flex items-center gap-1 font-bold text-white">
-                    <Bookmark className="w-3.5 h-3.5 text-zinc-400" />
-                    Chunk #{chunk.chunk_index + 1}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {chunk.page_number && (
-                      <span className="bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 text-zinc-300 text-[10px]">
-                        Page {chunk.page_number}
-                      </span>
-                    )}
-                    {chunk.cell_range && (
-                      <span className="bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 text-zinc-300 text-[10px]">
-                        Cells: {chunk.cell_range}
-                      </span>
-                    )}
-                    {chunk.audio_start_ms !== undefined && (
-                      <span className="bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 text-zinc-300 text-[10px]">
-                        {chunk.audio_start_ms}ms – {chunk.audio_end_ms}ms
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleCopyChunk(chunk)}
-                      className="text-xs text-zinc-400 hover:text-white inline-flex items-center gap-1 ml-1 cursor-pointer"
-                    >
-                      {copiedChunkId === chunk.id ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedChunkId === chunk.id ? "Copied" : "Copy"}</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed font-mono bg-zinc-950 p-2.5 rounded-lg border border-zinc-850">
-                  {chunk.content}
-                </div>
+        {file?.error_message && (
+          <ErrorState
+            title="Extraction limitation"
+            message={file.error_message}
+          />
+        )}
+        {chunks.length > 2 && (
+          <input
+            aria-label="Search extracted content"
+            className="field"
+            placeholder="Search extracted content"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        )}
+        {loading ? (
+          <LoadingState label="Loading extracted content" />
+        ) : error ? (
+          <ErrorState
+            message={error}
+            onRetry={() => setRetry((value) => value + 1)}
+          />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={
+              query ? "No matching excerpts" : "No extracted content available"
+            }
+            description={
+              query
+                ? "Try another search term."
+                : "Check the source processing status. Original-file rendering is not available in this preview."
+            }
+          />
+        ) : (
+          visible.map((chunk) => (
+            <article
+              key={chunk.id}
+              className="border-b border-zinc-800 pb-5 last:border-0"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-medium">
+                  Excerpt {chunk.chunk_index + 1}
+                </h3>
+                <button className="btn-ghost" onClick={() => void copy(chunk)}>
+                  {copied === chunk.id ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  {copied === chunk.id ? "Copied" : "Copy excerpt"}
+                </button>
               </div>
-            ))
-          )}
-        </div>
+              <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-400">
+                {chunk.page_number != null && (
+                  <span>Page {chunk.page_number}</span>
+                )}
+                {chunk.cell_range && <span>Cells {chunk.cell_range}</span>}
+                {chunk.audio_start_ms != null && (
+                  <span>
+                    {formatDuration(chunk.audio_start_ms)} –{" "}
+                    {formatDuration(chunk.audio_end_ms)}
+                  </span>
+                )}
+                {typeof chunk.chunk_metadata?.speaker === "string" && (
+                  <span>Speaker: {chunk.chunk_metadata.speaker}</span>
+                )}
+                {chunk.extraction_method && (
+                  <span>{chunk.extraction_method.replace(/_/g, " ")}</span>
+                )}
+              </div>
+              <blockquote className="whitespace-pre-wrap break-words border-l-2 border-zinc-600 pl-4 text-sm leading-7 text-zinc-300">
+                {chunk.content}
+              </blockquote>
+              <details className="mt-4 text-xs text-zinc-400">
+                <summary>Extraction details</summary>
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+                  <dt>Excerpt ID</dt>
+                  <dd className="break-all font-mono">{chunk.id}</dd>
+                  <dt>Lexical retrieval</dt>
+                  <dd>{chunk.lexical_search_status || "Not reported"}</dd>
+                  <dt>Semantic retrieval</dt>
+                  <dd>{chunk.semantic_search_status || "Not reported"}</dd>
+                  {chunk.embedding_model && (
+                    <>
+                      <dt>Embedding model</dt>
+                      <dd className="break-words">{chunk.embedding_model}</dd>
+                    </>
+                  )}
+                </dl>
+              </details>
+            </article>
+          ))
+        )}
       </div>
-    </div>
+    </Dialog>
   );
 }

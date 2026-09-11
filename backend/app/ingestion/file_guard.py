@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import zipfile
 from pathlib import Path
 from typing import Tuple, Dict
 from fastapi import UploadFile, HTTPException, status
@@ -137,6 +138,21 @@ async def process_and_save_upload(
         temp_target_path.unlink(missing_ok=True)
     else:
         temp_target_path.rename(final_storage_path)
+
+    if ext in {".docx", ".xlsx"}:
+        try:
+            with zipfile.ZipFile(final_storage_path) as archive:
+                members = archive.infolist()
+                total = sum(item.file_size for item in members)
+                if total > settings.MAX_UNCOMPRESSED_BYTES or total > max(byte_count * 100, 10 * 1024 * 1024):
+                    raise ValueError("Office archive expansion limit exceeded.")
+                for item in members:
+                    normalized = item.filename.replace("\\", "/")
+                    if normalized.startswith("/") or "../" in f"/{normalized}" or normalized.lower().endswith("vbaproject.bin"):
+                        raise ValueError("Unsafe path or macro content in Office document.")
+        except (zipfile.BadZipFile, ValueError) as exc:
+            final_storage_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=f"Invalid or unsafe Office document: {exc}")
         
     modality = detect_modality(ext, file.content_type or "")
     return clean_filename, str(final_storage_path), byte_count, sha256_hash, modality

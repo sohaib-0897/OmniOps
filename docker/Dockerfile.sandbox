@@ -1,0 +1,21 @@
+ARG BACKEND_IMAGE=omniops-backend:2026.09.05
+FROM ${BACKEND_IMAGE}
+
+USER root
+
+RUN rm -rf /app /root/.cache \
+    && groupadd --system --gid 65532 sandbox \
+    && useradd --system --uid 65532 --gid 65532 --home-dir /sandbox --create-home sandbox \
+    && mkdir -p /opt /sandbox \
+    && chown -R 65532:65532 /sandbox
+
+# Deliberately keep the runtime image stdlib-only. Data access is supplied as
+# serialized input; heavier libraries can be added only through a reviewed,
+# pinned image build and never by the execution request.
+COPY docker/sandbox_runner.py /opt/runner.py
+RUN chmod 0555 /opt/runner.py
+
+USER 65532:65532
+WORKDIR /sandbox
+HEALTHCHECK NONE
+ENTRYPOINT ["python", "/opt/runner.py"]

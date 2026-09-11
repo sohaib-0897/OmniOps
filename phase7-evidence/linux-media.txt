@@ -1,0 +1,157 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+{
+  "fixtures": "Authored validation inputs; no business metrics or live semantic provider calls",
+  "pdf": {
+    "native.pdf": {
+      "status": "READY",
+      "records": 1,
+      "methods": [
+        "NATIVE_TEXT"
+      ],
+      "error_code": null,
+      "pages_processed": 1
+    },
+    "scanned.pdf": {
+      "status": "READY",
+      "records": 1,
+      "methods": [
+        "OCR"
+      ],
+      "error_code": null,
+      "pages_processed": 1
+    },
+    "mixed.pdf": {
+      "status": "READY",
+      "records": 2,
+      "methods": [
+        "NATIVE_TEXT",
+        "OCR"
+      ],
+      "error_code": null,
+      "pages_processed": 2
+    },
+    "empty.pdf": {
+      "status": "NO_TEXT_DETECTED",
+      "records": 0,
+      "methods": [],
+      "error_code": "NO_TEXT_DETECTED",
+      "pages_processed": 1
+    },
+    "image-heavy.pdf": {
+      "status": "READY",
+      "records": 3,
+      "methods": [
+        "OCR"
+      ],
+      "error_code": null,
+      "pages_processed": 3
+    },
+    "pages-501.pdf": {
+      "status": "INVALID_MEDIA",
+      "records": 0,
+      "methods": [],
+      "error_code": "MEDIA_TOO_LARGE",
+      "pages_processed": null
+    },
+    "malformed.pdf": {
+      "status": "INVALID_MEDIA",
+      "records": 0,
+      "methods": [],
+      "error_code": "INVALID_MEDIA",
+      "pages_processed": null
+    }
+  },
+  "image": {
+    "ocr.png": {
+      "status": "VISION_UNAVAILABLE",
+      "error": null,
+      "width": 1000,
+      "height": 250
+    },
+    "valid.jpg": {
+      "status": "VISION_UNAVAILABLE",
+      "error": null,
+      "width": 1000,
+      "height": 250
+    },
+    "invalid.png": {
+      "status": "INVALID_MEDIA",
+      "error": "INVALID_MEDIA",
+      "width": null,
+      "height": null
+    },
+    "pixels-over.png": {
+      "status": "INVALID_MEDIA",
+      "error": "IMAGE_PIXEL_LIMIT_EXCEEDED",
+      "width": 5000,
+      "height": 4001
+    },
+    "pixels-exact.png": {
+      "status": "VISION_UNAVAILABLE",
+      "error": null,
+      "width": 5000,
+      "height": 4000
+    },
+    "spoofed_extension_rejected": true,
+    "real_ocr": {
+      "status": "PARTIALLY_READY",
+      "chunks": 1,
+      "methods": [
+        "IMAGE_OCR"
+      ]
+    }
+  },
+  "audio": {
+    "speech-tts.wav": {
+      "status": "TRANSCRIPTION_UNAVAILABLE",
+      "chunks": 0,
+      "error": "TRANSCRIPTION_UNAVAILABLE"
+    },
+    "spoof.wav": {
+      "status": "INVALID_MEDIA",
+      "chunks": 0,
+      "error": "INVALID_MEDIA"
+    },
+    "truncated.wav": {
+      "status": "INVALID_MEDIA",
+      "chunks": 0,
+      "error": "INVALID_MEDIA"
+    },
+    "duration-over.wav": {
+      "status": "INVALID_MEDIA",
+      "chunks": 0,
+      "error": "MEDIA_DURATION_EXCEEDED"
+    }
+  },
+  "guard": {
+    "traversal": {
+      "accepted": true,
+      "clean_name": "outside.txt",
+      "bytes": 28
+    },
+    "archive": {
+      "accepted": false,
+      "http": 400,
+      "detail": "File extension '.zip' is not supported. Allowed: .pdf, .docx, .xlsx, .xls, .csv, .tsv, .mp3, .wav, .m4a, .ogg, .png, .jpg, .jpeg, .txt"
+    },
+    "macros": {
+      "accepted": false,
+      "http": 400,
+      "detail": "Invalid or unsafe Office document: Unsafe path or macro content in Office document."
+    },
+    "zip_path": {
+      "accepted": false,
+      "http": 400,
+      "detail": "Invalid or unsafe Office document: Unsafe path or macro content in Office document."
+    },
+    "byte_limit_plus_one": {
+      "accepted": false,
+      "http": 413,
+      "detail": "File size exceeds maximum allowed limit of 50 MB."
+    }
+  }
+}
+
+/tmp/phase7/scripts/phase7_media.py:47: StarletteDeprecationWarning: 'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.
+  saved=await process_and_save_upload(UploadFile(filename=name,file=io.BytesIO(data)),'phase7-boundary');return {'accepted':True,'clean_name':saved[0],'bytes':saved[2]}

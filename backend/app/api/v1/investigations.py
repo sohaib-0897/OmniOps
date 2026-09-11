@@ -4,7 +4,8 @@ from typing import List, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
+from app.models.evidence import RuntimeEvent
 
 from app.core.database import get_db, AsyncSessionLocal
 from app.models.user import User, WorkspaceMembership, WorkspaceRole
@@ -21,6 +22,9 @@ from app.agent.service import run_investigation
 from app.agent.sse_manager import sse_manager
 from app.agent.runtime import resume_investigation
 from app.agent.runtime import persist_runtime_event, logical_identity, publish_persisted_runtime_events
+from app.core.rate_limit import client_ip, enforce_rate_limit
+from app.core.config import settings
+from app.core.observability import SSE_CONNECTIONS
 
 router = APIRouter(tags=["Investigations"])
 
@@ -40,12 +44,15 @@ async def create_investigation(
     workspace_id: uuid.UUID,
     req: InvestigationCreateRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     membership: WorkspaceMembership = Depends(require_role(WorkspaceRole.EDITOR)),
     db: AsyncSession = Depends(get_db)
     , idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
 ):
     """Start an evidence-grounded investigation and dispatch the bounded runtime."""
+    await enforce_rate_limit(db, key=f"investigation:user:{current_user.id}", limit=settings.RATE_LIMIT_INVESTIGATION_PER_HOUR, window_seconds=3600)
+    await enforce_rate_limit(db, key=f"investigation:workspace:{workspace_id}", limit=settings.RATE_LIMIT_INVESTIGATION_PER_HOUR * 3, window_seconds=3600)
     if idempotency_key:
         existing = (await db.execute(select(InvestigationSession).where(InvestigationSession.idempotency_key == idempotency_key, InvestigationSession.workspace_id == workspace_id, InvestigationSession.user_id == current_user.id))).scalar_one_or_none()
         if existing:
@@ -195,22 +202,10 @@ async def get_investigation(
 async def stream_investigation_events(
     investigation_id: uuid.UUID,
     request: Request,
-    token: str,  # Query param for SSE browser event source
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """SSE Stream for real-time agent execution activity with strict tenant authorization."""
-    # 1. Verify token
-    from app.core.security import decode_access_token
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token subject")
-
-    # 2. Verify investigation exists and user is an authorized workspace member
+    """Authenticated DB-cursor SSE; persisted events are the sole replay source."""
     session = (await db.execute(
         select(InvestigationSession).where(InvestigationSession.id == investigation_id)
     )).scalar_one_or_none()
@@ -224,7 +219,7 @@ async def stream_investigation_events(
     mem = (await db.execute(
         select(WorkspaceMembership).where(
             WorkspaceMembership.workspace_id == session.workspace_id,
-            WorkspaceMembership.user_id == user_id
+            WorkspaceMembership.user_id == current_user.id
         )
     )).scalar_one_or_none()
 
@@ -234,26 +229,45 @@ async def stream_investigation_events(
             detail="Access denied to this investigation stream."
         )
 
-    session_id_str = str(investigation_id)
-    queue = sse_manager.subscribe(session_id_str)
+    last_id = request.headers.get("last-event-id")
+    cursor_time = None
+    if last_id:
+        try:
+            previous = (await db.execute(select(RuntimeEvent).where(RuntimeEvent.id == uuid.UUID(last_id), RuntimeEvent.investigation_id == investigation_id))).scalar_one_or_none()
+            if previous is None:
+                raise HTTPException(status_code=404, detail="Event cursor not found in this investigation.")
+            cursor_time = previous.created_at
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Malformed event cursor.")
+
+    # Authorization is complete. A long-lived stream must not retain the
+    # transaction/connection used for authentication while waiting on a client.
+    await db.close()
 
     async def event_generator() -> AsyncGenerator[str, None]:
+        nonlocal cursor_time, last_id
+        SSE_CONNECTIONS.inc()
         try:
-            # Send initial connection event
-            yield f"event: connected\ndata: {{\"session_id\": \"{session_id_str}\"}}\n\n"
-            
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    # Wait for next event with 15s heartbeat timeout
-                    event_payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-                    yield event_payload
-                except asyncio.TimeoutError:
-                    # Heartbeat comment
-                    yield ": heartbeat\n\n"
-        finally:
-            sse_manager.unsubscribe(session_id_str, queue)
+            yield f"event: connected\ndata: {{\"session_id\": \"{investigation_id}\"}}\n\n"
+            heartbeat = 0
+            while not await request.is_disconnected():
+                stmt = select(RuntimeEvent).where(RuntimeEvent.investigation_id == investigation_id)
+                if cursor_time is not None and last_id:
+                    stmt = stmt.where(or_(RuntimeEvent.created_at > cursor_time, and_(RuntimeEvent.created_at == cursor_time, RuntimeEvent.id > uuid.UUID(last_id))))
+                events = (await db.execute(stmt.order_by(RuntimeEvent.created_at.asc(), RuntimeEvent.id.asc()).limit(500))).scalars().all()
+                # Materialized rows remain readable after detaching. Return the
+                # connection before any network yield or polling delay; the next
+                # query starts a fresh transaction and sees newly committed rows.
+                await db.close()
+                for event in events:
+                    data = {"event_id": str(event.id), "event_type": event.event_type, "entity_id": str(event.entity_id) if event.entity_id else None, "payload": event.payload or {}, "created_at": event.created_at.isoformat()}
+                    import json
+                    yield f"id: {event.id}\nevent: {event.event_type}\ndata: {json.dumps(data, default=str)}\n\n"
+                    cursor_time, last_id = event.created_at, str(event.id)
+                heartbeat += 1
+                if heartbeat >= 15: heartbeat = 0; yield ": heartbeat\n\n"
+                await asyncio.sleep(1)
+        finally: SSE_CONNECTIONS.dec()
 
     return StreamingResponse(
         event_generator(),

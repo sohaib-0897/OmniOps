@@ -1,0 +1,27 @@
+{
+  "working_tree_files_scanned": 425,
+  "history_blobs_scanned": 141,
+  "history_commits": 3,
+  "scanner": {
+    "gitleaks": false,
+    "trufflehog": false,
+    "method": "targeted credential signatures; not exhaustive entropy scan"
+  },
+  "findings": [],
+  "large_nonignored_files": [],
+  "clean_head": {
+    "sha": "fae93e75f8a58d4637e9f55f7bd017aad9bf8964",
+    "missing_required_files": [
+      "docker-compose.prod.yml",
+      "backend/app/core/observability.py",
+      "backend/app/worker.py",
+      "backend/alembic/versions/20260911_phase6_sessions.py",
+      ".github/workflows/ci.yml"
+    ],
+    "production_compose_exit": 1,
+    "dependent_clean_launch": "NOT_RUN: required release topology/modules absent"
+  },
+  "audit_sha256": "f52705af7e850c00103a39d29d11c28d91803916fdb22d2cfdf946f23793940c",
+  "remote_count": 1,
+  "GitHub_hosted_CI": "NOT_RUN"
+}

@@ -17,8 +17,7 @@ async def test_health_check_endpoint(client: AsyncClient):
     data = resp.json()
     assert data["success"] is True
     assert data["data"]["status"] == "healthy"
-    assert data["data"]["subsystems"]["database"] == "connected"
-    assert data["data"]["subsystems"]["duckdb_vectorized_engine"] == "ready"
+    assert data["data"]["service"] == "OmniOps Backend"
 
 @pytest.mark.asyncio
 async def test_parquet_file_unlinking_on_document_delete(

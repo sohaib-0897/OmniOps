@@ -1,0 +1,35 @@
+{
+  "broken_source_chain": {
+    "direct_evidence_accepted": false,
+    "calculation_wrapped_accepted": true,
+    "direct_errors": [
+      "BROKEN_EVIDENCE_SOURCE_CHAIN:29b08ccc-ca6c-437d-b559-8851f5974c74"
+    ],
+    "nested_errors": []
+  },
+  "unrecomputed_calculation": {
+    "formula": "10 + 1",
+    "stored_output": 999,
+    "invalid_hash_accepted": true
+  },
+  "empty_inference_support_accepted": true,
+  "no_support": {
+    "valid": false,
+    "errors": [
+      "UNSUPPORTED_CLAIM"
+    ]
+  },
+  "missing_evidence": {
+    "valid": false,
+    "errors": [
+      "EVIDENCE_NOT_FOUND:b32fa312-cf7f-4193-9e56-183acf23ca57"
+    ]
+  },
+  "missing_calculation": {
+    "valid": false,
+    "errors": [
+      "CALCULATION_NOT_FOUND:b2233d0a-a71c-4aca-b3e8-a8d37567f29c"
+    ]
+  },
+  "raw_provider_exception_logged": true
+}

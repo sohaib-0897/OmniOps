@@ -1,0 +1,51 @@
+
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.sandbox
+#1 transferring dockerfile: 744B 0.1s done
+#1 DONE 0.2s
+
+#2 [internal] load metadata for docker.io/library/omniops-backend:phase7
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 33B 0.1s
+#3 transferring context: 272B 0.1s done
+#3 DONE 0.2s
+
+#4 [1/5] FROM docker.io/library/omniops-backend:phase7@sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71
+#4 resolve docker.io/library/omniops-backend:phase7@sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71 0.1s done
+#4 DONE 0.2s
+
+#5 [2/5] RUN rm -rf /app /root/.cache     && groupadd --system --gid 65532 sandbox     && useradd --system --uid 65532 --gid 65532 --home-dir /sandbox --create-home sandbox     && mkdir -p /opt /sandbox     && chown -R 65532:65532 /sandbox
+#5 ...
+
+#6 [internal] load build context
+#6 transferring context: 3.51kB 0.2s done
+#6 DONE 0.3s
+
+#5 [2/5] RUN rm -rf /app /root/.cache     && groupadd --system --gid 65532 sandbox     && useradd --system --uid 65532 --gid 65532 --home-dir /sandbox --create-home sandbox     && mkdir -p /opt /sandbox     && chown -R 65532:65532 /sandbox
+#5 0.703 useradd warning: sandbox's uid 65532 is greater than SYS_UID_MAX 999
+#5 DONE 1.0s
+
+#7 [3/5] COPY docker/sandbox_runner.py /opt/runner.py
+#7 DONE 0.3s
+
+#8 [4/5] RUN chmod 0555 /opt/runner.py
+#8 DONE 0.7s
+
+#9 [5/5] WORKDIR /sandbox
+#9 DONE 0.5s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 1.2s done
+#10 exporting manifest sha256:1df8e37fba1321f1109b3f008372d64ee685a313d0642df0af6c3c112f9bd487 0.1s done
+#10 exporting config sha256:304f19b51cec60bfa19cf2c3426af34e023ed482dfd6d6a76fece251cd6df738 0.1s done
+#10 exporting attestation manifest sha256:d622e613aa7666befe9b1c3d4d207c2f5aa8448c894e9de7cd4f036a049c1b4b 0.1s done
+#10 exporting manifest list sha256:d66eb7de83a773b82d8e5afe0f1c1c3974aaa793b2ab670f4315cb4099f8977f
+#10 exporting manifest list sha256:d66eb7de83a773b82d8e5afe0f1c1c3974aaa793b2ab670f4315cb4099f8977f 0.1s done
+#10 naming to docker.io/library/omniops-python-sandbox:phase7 done
+#10 unpacking to docker.io/library/omniops-python-sandbox:phase7
+#10 unpacking to docker.io/library/omniops-python-sandbox:phase7 0.3s done
+#10 DONE 1.9s

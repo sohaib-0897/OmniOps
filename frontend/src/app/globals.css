@@ -4,88 +4,250 @@
 
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 0% 90%;
-    --destructive-foreground: 0 0% 10%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    color-scheme: dark;
+    --background: 240 6% 4%;
+    --foreground: 0 0% 96%;
+    --card: 240 5% 7%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 5% 8%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 240 6% 4%;
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 4% 68%;
+    --accent: 240 4% 15%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 55% 58%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 18%;
+    --input: 240 4% 24%;
+    --ring: 0 0% 82%;
     --radius: 0.75rem;
+    --surface-base: #101113;
+    --surface-panel: #181a1e;
+    --surface-raised: #22252a;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --control-time: 140ms;
+    --panel-time: 200ms;
+    --dialog-time: 240ms;
   }
-
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 0% 90%;
-    --destructive-foreground: 0 0% 10%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-  }
-}
-
-@layer base {
   * {
     @apply border-border;
   }
   body {
-    @apply bg-black text-zinc-100 antialiased selection:bg-zinc-800 selection:text-white;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+    @apply bg-[#0b0c0e] text-zinc-100 antialiased selection:bg-zinc-700 selection:text-white;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+    text-rendering: optimizeLegibility;
+    font-size: 14px;
+    line-height: 1.6;
   }
-
-  /* Minimal Scrollbars */
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  :focus-visible {
+    outline: 2px solid #d4d4d8;
+    outline-offset: 3px;
+  }
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 7px;
+    height: 7px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(161, 161, 170, 0.2);
-    border-radius: 9999px;
+    background: #3f3f46;
+    border-radius: 4px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(161, 161, 170, 0.4);
+  summary {
+    cursor: pointer;
   }
-
-  /* High Precision Focus Ring */
-  :focus-visible {
-    @apply outline-none ring-1 ring-zinc-400 ring-offset-1 ring-offset-black;
+  dialog::backdrop {
+    background: rgb(0 0 0 / 72%);
   }
 }
 
-@layer utilities {
-  .panel-surface {
-    @apply bg-zinc-950 border border-zinc-800/90 shadow-2xl;
+@layer components {
+  .app-page {
+    @apply min-h-screen bg-[#0b0c0e] text-zinc-100;
   }
-
-  .card-surface {
-    @apply bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 transition-all duration-150;
+  .app-topbar {
+    @apply sticky top-0 z-30 border-b border-zinc-800 bg-[#101113];
+  }
+  .app-container {
+    @apply mx-auto w-full max-w-[1600px] px-4 sm:px-6;
+  }
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.1em] text-zinc-400;
+  }
+  .page-title {
+    @apply text-2xl font-semibold tracking-tight text-zinc-100 sm:text-3xl;
+  }
+  .section-title {
+    @apply text-sm font-semibold text-zinc-100;
+  }
+  .body-copy {
+    @apply text-sm leading-6 text-zinc-300;
+  }
+  .meta-copy {
+    @apply text-xs leading-5 text-zinc-400;
+  }
+  .mono-copy {
+    @apply font-mono text-[11px] text-zinc-400;
+  }
+  .surface {
+    @apply rounded-xl border border-zinc-800;
+    background: var(--surface-panel);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 16%);
+  }
+  .surface-muted {
+    @apply rounded-xl border border-zinc-800;
+    background: var(--surface-base);
+  }
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .btn-destructive,
+  .btn-ghost,
+  .btn-icon {
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[8px] px-3 text-sm font-medium disabled:opacity-40;
+    transition: background-color var(--control-time) var(--ease-out), border-color var(--control-time) var(--ease-out), color var(--control-time) var(--ease-out), transform var(--control-time) var(--ease-out);
+  }
+  .btn-primary {
+    @apply border border-zinc-100 bg-zinc-100 text-zinc-950 hover:bg-white active:bg-zinc-300;
+  }
+  .btn-secondary {
+    @apply border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800 active:bg-zinc-700;
+  }
+  .btn-outline {
+    @apply border border-zinc-700 text-zinc-200 hover:bg-zinc-800 active:bg-zinc-700;
+  }
+  .btn-ghost,
+  .btn-icon {
+    @apply text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 active:bg-zinc-700;
+  }
+  .btn-icon {
+    @apply w-10 px-0;
+  }
+  .btn-destructive {
+    @apply border border-red-900 bg-red-950/40 text-red-200 hover:bg-red-950 active:bg-red-900;
+  }
+  .field {
+    @apply w-full min-w-0 rounded-[8px] border border-zinc-600 bg-[#101113] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-zinc-300 disabled:opacity-50;
+    transition: border-color var(--control-time) var(--ease-out), box-shadow var(--control-time) var(--ease-out);
+  }
+  .field-label {
+    @apply mb-2 block text-xs font-medium text-zinc-300;
+  }
+  .status-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400;
+  }
+  .status-dot-live {
+    @apply bg-zinc-200;
+  }
+  .focus-ring {
+    @apply rounded-md;
+  }
+  .workspace-grid {
+    @apply grid items-start gap-5 py-5;
+  }
+  .data-table {
+    @apply w-full border-collapse text-left text-xs;
+  }
+  .data-table th {
+    @apply border-b border-zinc-700 bg-[#18191c] px-3 py-2.5 font-medium text-zinc-300;
+  }
+  .data-table td {
+    @apply border-b border-zinc-800 px-3 py-2.5 text-zinc-300;
+  }
+  .data-table tbody tr:hover {
+    @apply bg-zinc-800/40;
+  }
+  .citation {
+    @apply inline-flex min-h-7 items-center gap-1 rounded border border-zinc-700 px-2 font-mono text-[11px] text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800;
+  }
+  .skip-link {
+    @apply fixed left-4 top-3 z-[100] -translate-y-20 rounded-md bg-white px-4 py-2 text-sm text-black focus:translate-y-0;
+  }
+}
+@media (min-width: 1024px) {
+  .workspace-grid {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+@media (min-width: 1440px) {
+  .workspace-grid {
+    grid-template-columns: 280px minmax(0, 1fr) 320px;
+  }
+}
+@media (max-width: 639px) {
+  .field {
+    font-size: 16px;
+  }
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .btn-destructive,
+  .btn-ghost,
+  .btn-icon {
+    min-height: 44px;
+  }
+}
+/* Shared presentation also covers reports, previews and terminal states. */
+@layer components {
+  .auth-panel { @apply surface w-full max-w-md p-6 sm:p-9; }
+  .composer { border-color: #52565e; box-shadow: 0 12px 40px rgb(0 0 0 / 24%); }
+  .directory-row { transition: background-color var(--control-time) var(--ease-out); }
+  .directory-row:focus-visible { outline-offset: -3px; background: var(--surface-raised); }
+  .content-enter { animation: content-enter var(--panel-time) var(--ease-out); }
+}
+button:not(:disabled):active { transform: scale(0.98); }
+input::-ms-reveal { display: none; }
+main, dialog { overflow-wrap: anywhere; }
+dialog { background: var(--surface-panel) !important; box-shadow: 0 24px 80px rgb(0 0 0 / 45%); }
+dialog:not([data-drawer="true"]) { border-radius: 12px; }
+dialog[open][data-state="open"] { animation: dialog-enter var(--dialog-time) var(--ease-out); }
+dialog[open][data-drawer="true"][data-state="open"] { animation-name: drawer-enter; }
+dialog[open][data-state="closing"] { animation: dialog-exit 160ms var(--ease-out) forwards; }
+dialog[open]::backdrop { animation: backdrop-enter var(--dialog-time) var(--ease-out); }
+dialog[data-state="closing"]::backdrop { animation: backdrop-exit 160ms var(--ease-out) forwards; }
+[id^="panel-"] { animation: content-enter var(--panel-time) var(--ease-out); }
+.loading-pulse { animation: loading-pulse 1.6s ease-in-out infinite; }
+@keyframes loading-pulse { 50% { opacity: 0.45; } }
+.text-\[11px\]:not(.font-mono):not(.mono-copy), .eyebrow { font-size: 12px; }
+@keyframes content-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes dialog-enter { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes drawer-enter { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes dialog-exit { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
+@keyframes backdrop-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-exit { to { opacity: 0; } }
+@media (max-width: 767px) {
+  button, summary, .citation, .field { min-height: 44px; }
+  .btn-icon { min-width: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

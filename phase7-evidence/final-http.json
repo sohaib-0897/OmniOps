@@ -1,0 +1,61 @@
+{
+  "access_attacks": {
+    "expired_api": 401,
+    "expired_sse": 401,
+    "altered_signature": 401
+  },
+  "slow_sse": {
+    "persisted_events": 1200,
+    "payload_bytes_per_event": 8192,
+    "received": 1200,
+    "exact_order": true,
+    "duplicates": 0,
+    "rss_kib_before": 240092,
+    "rss_kib_paused": 250152,
+    "rss_kib_after": 250164,
+    "db_activity": {
+      "active": 1,
+      "idle": 3
+    },
+    "capacity_claim": false
+  },
+  "investigation_rate_A_B": {
+    "requests": 24,
+    "concurrency": 4,
+    "statuses": {
+      "200": 20,
+      "429": 4
+    }
+  },
+  "upload_rate_A_B": {
+    "requests": 32,
+    "statuses": {
+      "400": 30,
+      "429": 2
+    }
+  },
+  "logout_all": {
+    "status": 200,
+    "session_one": 401,
+    "session_two": 401
+  },
+  "login_rate_A_B": {
+    "requests": 14,
+    "statuses": {
+      "401": 6,
+      "429": 8
+    }
+  },
+  "response_headers": {
+    "x-request-id": "cb032da3-44ee-42b5-9450-144f21e16063",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+  },
+  "log_scan": {
+    "exact_test_credentials_found": [],
+    "raw_SQL_in_error_logs": false,
+    "refresh_replay_audit_event": false,
+    "log_bytes": 120763,
+    "logs_exported": false
+  }
+}

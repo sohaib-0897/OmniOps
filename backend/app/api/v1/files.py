@@ -1,9 +1,10 @@
 import uuid
 from typing import List
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
+from app.core.rate_limit import enforce_rate_limit
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -14,10 +15,11 @@ from app.schemas.common import ResponseEnvelope
 from app.api.deps import get_workspace_membership, require_role
 from app.ingestion.file_guard import process_and_save_upload
 from app.ingestion.tabular import process_tabular_file
-from app.ingestion.pdf_parser import parse_pdf_document
+from app.ingestion.pdf_parser import extract_pdf_document
 from app.ingestion.docx_parser import parse_docx_document
-from app.ingestion.audio_parser import parse_audio_recording
-from app.ingestion.vision_parser import parse_image_file
+from app.ingestion.audio_parser import transcribe_audio_recording
+from app.ingestion.vision_parser import analyze_image_file
+from app.ingestion.contracts import ExtractionStatus, stable_extraction_id
 from app.rag.embeddings import EmbeddingProvider, EmbeddingState
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/files", tags=["Files & Ingestion"])
@@ -37,19 +39,51 @@ async def _embedding_fields(content: str, db: AsyncSession) -> dict:
         "lexical_search_status": "READY",
     }
 
+
+def _provenance_metadata(doc: SourceDocument, chunk: dict, index: int) -> dict:
+    """Attach stable extraction identity and source coordinates to each chunk."""
+    method = chunk.get("extraction_method", "unknown")
+    locator = {
+        "index": index,
+        "page_number": chunk.get("page_number"),
+        "audio_start_ms": chunk.get("audio_start_ms"),
+        "audio_end_ms": chunk.get("audio_end_ms"),
+    }
+    metadata = dict(chunk.get("metadata") or chunk.get("chunk_metadata") or {})
+    metadata.update({
+        "source_document_id": str(doc.id),
+        "extraction_method": method,
+        "extraction_id": stable_extraction_id(
+            source_hash=doc.sha256_hash,
+            modality=doc.modality,
+            method=method,
+            locator=locator,
+            content=chunk.get("content", ""),
+        ),
+    })
+    return metadata
+
 @router.post("", response_model=ResponseEnvelope[DocumentResponse])
 async def upload_file(
     workspace_id: uuid.UUID,
+    request: Request,
     file: UploadFile = File(...),
     membership: WorkspaceMembership = Depends(require_role(WorkspaceRole.EDITOR)),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload and process multimodal document into the workspace."""
+    await enforce_rate_limit(db, key=f"upload:workspace:{workspace_id}", limit=settings.RATE_LIMIT_UPLOAD_PER_HOUR, window_seconds=3600)
+    used = (await db.execute(select(func.coalesce(func.sum(SourceDocument.byte_size), 0)).where(SourceDocument.workspace_id == workspace_id))).scalar_one()
+    if used >= settings.MAX_WORKSPACE_STORAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Workspace storage quota has been reached.")
     # 1. Guard and store
     clean_name, storage_path, byte_size, sha256_hash, modality = await process_and_save_upload(
         file=file,
         workspace_id=str(workspace_id)
     )
+    if used + byte_size > settings.MAX_WORKSPACE_STORAGE_BYTES:
+        Path(storage_path).unlink(missing_ok=True)
+        raise HTTPException(status_code=413, detail="Upload would exceed the workspace storage quota.")
 
     # Check for duplicate document in workspace
     existing_doc = (await db.execute(
@@ -107,8 +141,12 @@ async def upload_file(
                     db.add(dataset_obj)
 
         elif modality == "pdf":
-            chunks = parse_pdf_document(storage_path)
-            for idx, c in enumerate(chunks):
+            parsed_pdf = extract_pdf_document(storage_path)
+            doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed_pdf.metadata, "extraction_status": parsed_pdf.status.value, "error_code": parsed_pdf.error_code}
+            if parsed_pdf.status == ExtractionStatus.INVALID_MEDIA:
+                raise ValueError(f"{parsed_pdf.error_code or 'INVALID_MEDIA'}: {parsed_pdf.error_message or 'PDF extraction failed.'}")
+            for idx, record in enumerate(parsed_pdf.records):
+                c = {"content": record.text or "", "page_number": record.page_number, "extraction_method": record.extraction_method.value, "metadata": record.metadata}
                 embedding_fields = await _embedding_fields(c["content"], db)
                 chunk_obj = DocumentChunk(
                     workspace_id=workspace_id,
@@ -117,8 +155,8 @@ async def upload_file(
                     content=c["content"],
                     modality="pdf",
                     page_number=c.get("page_number"),
-                    chunk_metadata=c.get("metadata", {}),
-                    extraction_method="pymupdf",
+                    chunk_metadata=_provenance_metadata(doc, c, idx),
+                    extraction_method=c.get("extraction_method", "NATIVE_TEXT"),
                     **embedding_fields
                 )
                 db.add(chunk_obj)
@@ -134,15 +172,17 @@ async def upload_file(
                     content=c["content"],
                     modality="docx",
                     page_number=c.get("page_number"),
-                    chunk_metadata=c.get("metadata", {}),
-                    extraction_method="python-docx",
+                    chunk_metadata=_provenance_metadata(doc, c, idx),
+                    extraction_method=c.get("extraction_method", "DOCX_TEXT"),
                     **embedding_fields
                 )
                 db.add(chunk_obj)
 
         elif modality == "audio":
-            parsed = parse_audio_recording(storage_path)
-            doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed["metadata"], "semantic_status": parsed["status"]}
+            parsed = await transcribe_audio_recording(storage_path)
+            doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed["metadata"], "semantic_status": parsed["status"], "extraction_status": parsed["status"]}
+            if parsed["status"] == ExtractionStatus.INVALID_MEDIA.value:
+                raise ValueError(f"{parsed['metadata'].get('error_code', 'INVALID_MEDIA')}: audio validation failed.")
             for idx, c in enumerate(parsed["chunks"]):
                 embedding_fields = await _embedding_fields(c["content"], db)
                 chunk_obj = DocumentChunk(
@@ -153,15 +193,17 @@ async def upload_file(
                     modality="audio",
                     audio_start_ms=c.get("audio_start_ms"),
                     audio_end_ms=c.get("audio_end_ms"),
-                    chunk_metadata=c.get("metadata", {}),
-                    extraction_method=c.get("metadata", {}).get("engine", "OpenAI-Whisper-1"),
+                    chunk_metadata=_provenance_metadata(doc, c, idx),
+                    extraction_method=c.get("extraction_method", ExtractionStatus.TRANSCRIPTION_UNAVAILABLE.value),
                     **embedding_fields
                 )
                 db.add(chunk_obj)
 
         elif modality == "image":
-            parsed = parse_image_file(storage_path)
-            doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed["metadata"], "semantic_status": parsed["status"]}
+            parsed = await analyze_image_file(storage_path)
+            doc.doc_metadata = {**(doc.doc_metadata or {}), **parsed["metadata"], "semantic_status": parsed["status"], "extraction_status": parsed["status"]}
+            if parsed["status"] == ExtractionStatus.INVALID_MEDIA.value:
+                raise ValueError(f"{parsed['metadata'].get('error_code', 'INVALID_MEDIA')}: image validation failed.")
             for idx, c in enumerate(parsed["chunks"]):
                 embedding_fields = await _embedding_fields(c["content"], db)
                 chunk_obj = DocumentChunk(
@@ -170,8 +212,8 @@ async def upload_file(
                     chunk_index=idx,
                     content=c["content"],
                     modality="image",
-                    chunk_metadata=c.get("metadata", {}),
-                    extraction_method="vision-provider",
+                    chunk_metadata=_provenance_metadata(doc, c, idx),
+                    extraction_method=c.get("extraction_method", "VISION"),
                     **embedding_fields
                 )
                 db.add(chunk_obj)
@@ -182,7 +224,8 @@ async def upload_file(
                 embedding_fields = await _embedding_fields(content, db)
                 db.add(DocumentChunk(
                     workspace_id=workspace_id, source_id=doc.id, chunk_index=0,
-                    content=content, modality="text", extraction_method="utf-8-text",
+                    content=content, modality="text", extraction_method="UTF8_TEXT",
+                    chunk_metadata=_provenance_metadata(doc, {"content": content, "extraction_method": "UTF8_TEXT"}, 0),
                     **embedding_fields,
                 ))
 
@@ -193,7 +236,17 @@ async def upload_file(
                 "DEVELOPMENT_FALLBACK" if all(state == "DEVELOPMENT_FALLBACK" for state in chunk_states) else "UNAVAILABLE"
             )
             doc.doc_metadata = {**(doc.doc_metadata or {}), "search_indexing": {"lexical": "READY", "semantic": semantic_state}}
-        doc.processing_status = ProcessingStatus.READY.value
+        extraction_status = (doc.doc_metadata or {}).get("extraction_status")
+        doc.processing_status = ProcessingStatus.PARTIALLY_READY.value if extraction_status in {
+            ExtractionStatus.PARTIALLY_READY.value,
+            ExtractionStatus.OCR_UNAVAILABLE.value,
+            ExtractionStatus.OCR_FAILED.value,
+            ExtractionStatus.VISION_UNAVAILABLE.value,
+            ExtractionStatus.VISION_FAILED.value,
+            ExtractionStatus.TRANSCRIPTION_UNAVAILABLE.value,
+            ExtractionStatus.TRANSCRIPTION_FAILED.value,
+            ExtractionStatus.NO_TEXT_DETECTED.value,
+        } else ProcessingStatus.READY.value
         await db.commit()
         await db.refresh(doc)
         return ResponseEnvelope.ok(DocumentResponse.model_validate(doc))

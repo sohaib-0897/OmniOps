@@ -1,0 +1,16 @@
+ARG BACKEND_IMAGE=omniops-backend:2026.09.05
+FROM ${BACKEND_IMAGE}
+
+USER root
+
+RUN rm -rf /app /root/.cache
+COPY backend/app/sandbox_runner_server.py /sandbox_runner_server.py
+WORKDIR /
+
+# The Docker Engine socket is mounted only into this dedicated runner, never
+# into the web/backend container. Prefer rootless Docker or a separate runner
+# host for production deployments.
+EXPOSE 9100
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health', timeout=2)"
+CMD ["uvicorn", "sandbox_runner_server:app", "--host", "0.0.0.0", "--port", "9100"]

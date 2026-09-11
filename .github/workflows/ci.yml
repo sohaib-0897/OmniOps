@@ -1,0 +1,59 @@
+name: CI
+on: [push, pull_request]
+permissions: { contents: read }
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: omniops, POSTGRES_PASSWORD: testpass, POSTGRES_DB: omniops_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U omniops -d omniops_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    env: { DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test", ENVIRONMENT: test, SECRET_KEY: ci-only-secret-with-at-least-thirty-two-bytes }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt pip-audit
+        working-directory: backend
+      - run: alembic -c alembic.ini upgrade head
+        working-directory: backend
+      - run: python -m pytest tests -q --disable-warnings
+        working-directory: backend
+      - run: python -m pytest tests/test_postgres_hybrid_retrieval.py -q --disable-warnings
+        working-directory: backend
+        env: { POSTGRES_TEST_DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test" }
+      - run: python -m pytest tests/test_phase3_runtime.py tests/test_phase3_live_concurrency.py tests/test_phase3_lifecycle_events.py tests/test_phase3_crash_recovery.py tests/test_phase3_closure_gates.py -q --disable-warnings
+        working-directory: backend
+        env: { POSTGRES_TEST_DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test" }
+      - run: python -m evals.runner
+      # Semantic embedding evaluation requires a separately configured compatible
+      # provider credential. PR CI verifies PostgreSQL retrieval above and the
+      # deterministic metrics here; it must not pretend to run the live eval.
+      - run: python -m pytest backend/tests/test_retrieval_metrics.py -q
+      - run: pip-audit -r requirements.txt
+        working-directory: backend
+      - run: alembic -c alembic.ini downgrade -1 && alembic -c alembic.ini upgrade head
+        working-directory: backend
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build
+      - run: npm audit --audit-level=high
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/Dockerfile.backend -t omniops-backend:${{ github.sha }} .
+      - run: docker build -f docker/Dockerfile.frontend -t omniops-frontend:${{ github.sha }} .
+      - run: docker build --build-arg BACKEND_IMAGE=omniops-backend:${{ github.sha }} -f docker/Dockerfile.sandbox -t omniops-sandbox:${{ github.sha }} .
+      - run: docker build --build-arg BACKEND_IMAGE=omniops-backend:${{ github.sha }} -f docker/Dockerfile.sandbox-runner -t omniops-runner:${{ github.sha }} .

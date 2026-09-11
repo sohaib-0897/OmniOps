@@ -1,0 +1,4 @@
+
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 20260911_phase6_sessions -> 20260910_phase38_replan, Phase 6 durable browser sessions and shared rate limits.

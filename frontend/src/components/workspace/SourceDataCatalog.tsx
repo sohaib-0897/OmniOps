@@ -1,22 +1,22 @@
 "use client";
-
-import React, { useState, useEffect } from "react";
-import { SourceDocument, TabularDataset } from "@/types/api";
+import { useMemo, useState } from "react";
 import {
   FileText,
-  Table as TableIcon,
-  Mic,
   Image as ImageIcon,
-  FileCode,
-  Trash2,
-  Eye,
-  Database,
+  Mic,
   Search,
-  AlertTriangle,
-  FolderOpen,
-  X,
+  Table2,
+  Trash2,
 } from "lucide-react";
+import { SourceDocument, TabularDataset } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
+import { formatBytes, formatDate } from "@/lib/utils";
+import {
+  EmptyState,
+  ErrorState,
+  StatusBadge,
+} from "@/components/ui/Primitives";
+import { Dialog } from "@/components/ui/Dialog";
 
 interface Props {
   workspaceId: string;
@@ -26,7 +26,6 @@ interface Props {
   onPreviewFile: (file: SourceDocument) => void;
   onPreviewTable: (table: TabularDataset) => void;
 }
-
 export function SourceDataCatalog({
   workspaceId,
   files,
@@ -35,312 +34,213 @@ export function SourceDataCatalog({
   onPreviewFile,
   onPreviewTable,
 }: Props) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [deletingFile, setDeletingFile] = useState<SourceDocument | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && deletingFile) {
-        setDeletingFile(null);
-      }
-    };
-    if (deletingFile) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [deletingFile]);
-
-  const getModalityIcon = (modality: string) => {
-    switch (modality.toLowerCase()) {
-      case "pdf":
-        return (
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-            <FileText className="w-4 h-4" />
-          </div>
-        );
-      case "spreadsheet":
-      case "csv":
-      case "xlsx":
-        return (
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-            <TableIcon className="w-4 h-4" />
-          </div>
-        );
-      case "audio":
-        return (
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-            <Mic className="w-4 h-4" />
-          </div>
-        );
-      case "image":
-        return (
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-            <ImageIcon className="w-4 h-4" />
-          </div>
-        );
-      default:
-        return (
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-            <FileCode className="w-4 h-4" />
-          </div>
-        );
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!deletingFile) return;
-    setIsDeleting(true);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [deleting, setDeleting] = useState<SourceDocument | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const query = search.toLowerCase().trim();
+  const visible = useMemo(
+    () =>
+      files.filter(
+        (file) =>
+          file.file_name.toLowerCase().includes(query) &&
+          (status === "all" || file.processing_status === status),
+      ),
+    [files, query, status],
+  );
+  const visibleTables = useMemo(
+    () =>
+      tables.filter((table) => table.table_name.toLowerCase().includes(query)),
+    [tables, query],
+  );
+  const remove = async () => {
+    if (!deleting || busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      await apiClient.delete(`/workspaces/${workspaceId}/files/${deletingFile.id}`);
+      await apiClient.delete(`/workspaces/${workspaceId}/files/${deleting.id}`);
       onRefresh();
+      setDeleting(null);
     } catch (err) {
-      console.error("Failed to delete file:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "The source could not be removed. Try again.",
+      );
     } finally {
-      setIsDeleting(false);
-      setDeletingFile(null);
+      setBusy(false);
     }
   };
-
-  const filteredTables = tables.filter((t) =>
-    t.table_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredFiles = files.filter((f) =>
-    f.file_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const totalSources = files.length + tables.length;
-
   return (
-    <div className="space-y-4 font-sans">
-      {/* Search filter */}
-      {totalSources > 2 && (
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Search datasets and files..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600 transition-colors"
-          />
-        </div>
-      )}
-
-      {/* Global Empty State */}
-      {totalSources === 0 && (
-        <div className="p-5 rounded-xl border border-dashed border-zinc-800 bg-zinc-950 text-center space-y-2">
-          <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center mx-auto">
-            <FolderOpen className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">No Lakehouse Sources</h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5 max-w-xs mx-auto leading-relaxed">
-              Upload spreadsheets and documents for analysis. Audio/image semantics require a configured provider.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 1. Tabular Datasets Section */}
-      {tables.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between pb-1">
-            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Database className="w-3.5 h-3.5 text-zinc-400" />
-              Tabular Datasets ({tables.length})
-            </h3>
-            <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded font-semibold">
-              DuckDB
-            </span>
-          </div>
-
-          <div className="space-y-1.5">
-            {filteredTables.map((table) => (
-              <div
-                key={table.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onPreviewTable(table)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onPreviewTable(table);
-                  }
-                }}
-                className="group flex items-center justify-between p-2.5 rounded-xl border border-zinc-800/90 bg-zinc-900/60 hover:bg-zinc-900 hover:border-zinc-700 cursor-pointer transition-all outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center shrink-0">
-                    <TableIcon className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-zinc-200 truncate group-hover:text-white transition-colors">
-                      {table.table_name}
-                    </p>
-                    <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                      {table.row_count.toLocaleString()} rows • {table.column_count} cols
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  aria-label="Preview Table"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPreviewTable(table);
-                  }}
-                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer"
-                  title="Inspect Schema & Sample Rows"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 2. Source Documents Section */}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="section-title">Sources</h2>
+        <span className="mono-copy">{files.length} {files.length === 1 ? "file" : "files"}</span>
+      </div>
       {files.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between pb-1">
-            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-zinc-400" />
-              Source Files ({files.length})
-            </h3>
-            <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded font-semibold">
-              Indexed
-            </span>
-          </div>
-
-          <div className="space-y-1.5">
-            {filteredFiles.map((file) => (
-              <div
-                key={file.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onPreviewFile(file)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onPreviewFile(file);
-                  }
-                }}
-                className="group flex items-center justify-between p-2.5 rounded-xl border border-zinc-800/90 bg-zinc-900/60 hover:bg-zinc-900 hover:border-zinc-700 cursor-pointer transition-all outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {getModalityIcon(file.modality)}
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-zinc-200 truncate group-hover:text-white transition-colors">
-                      {file.file_name}
-                    </p>
-                    <p className="text-[10px] text-zinc-400 uppercase font-mono mt-0.5">
-                      {file.modality} • {(file.byte_size / 1024).toFixed(0)} KB
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label="Preview File"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPreviewFile(file);
-                    }}
-                    className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer"
-                    title="Preview Extracted Chunks"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Delete File"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingFile(file);
-                    }}
-                    className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer"
-                    title="Delete File"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Accessible Confirmation Modal */}
-      {deletingFile && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-dialog-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setDeletingFile(null);
-            }
-          }}
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4 cursor-default"
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-3 h-3.5 w-3.5 text-zinc-400" />
+            <input
+              aria-label="Search sources"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search sources"
+              className="field h-10 pl-9 text-xs"
+            />
+          </label>
+          <select
+            aria-label="Filter source status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className="field h-9 text-xs"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-4 h-4 text-zinc-300" />
-                </div>
-                <div>
-                  <h4 id="delete-dialog-title" className="text-xs font-bold text-white">
-                    Delete Source File?
-                  </h4>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    Permanent removal from workspace index.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDeletingFile(null)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-850 transition-colors cursor-pointer"
-                aria-label="Close dialog"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-200 truncate">
-              {deletingFile.file_name}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => setDeletingFile(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handleConfirmDelete}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-black bg-white hover:bg-zinc-200 transition-colors cursor-pointer"
-              >
-                {isDeleting ? "Deleting..." : "Confirm Delete"}
-              </button>
-            </div>
-          </div>
+            <option value="all">All processing states</option>
+            <option value="ready">Ready</option>
+            <option value="partially_ready">Partially ready</option>
+            <option value="processing">Processing</option>
+            <option value="pending">Queued</option>
+            <option value="failed">Failed</option>
+          </select>
         </div>
       )}
+      {files.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="No sources yet"
+          description="Upload files above to give your investigation source material."
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="No matching sources"
+          description="Clear the search or change the processing filter."
+          action={
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                setSearch("");
+                setStatus("all");
+              }}
+            >
+              Clear filters
+            </button>
+          }
+        />
+      ) : (
+        <div className="divide-y divide-zinc-800">
+          {visible.map((file) => {
+            const Icon =
+              file.modality === "audio"
+                ? Mic
+                : file.modality === "image"
+                  ? ImageIcon
+                  : file.modality === "spreadsheet"
+                    ? Table2
+                    : FileText;
+            return (
+              <article key={file.id} className="directory-row group rounded-lg px-2 py-4 hover:bg-zinc-800/40 focus-within:bg-zinc-800/40">
+                <div className="flex items-start gap-2">
+                  <Icon className="mt-1 h-4 w-4 shrink-0 text-zinc-400" />
+                  <button
+                    onClick={() => onPreviewFile(file)}
+                    className="min-w-0 flex-1 text-left"
+                    title={file.file_name}
+                  >
+                    <span className="block truncate text-sm font-medium text-zinc-200 group-hover:text-white">
+                      {file.file_name}
+                    </span>
+                    <span className="mt-1 block text-[11px] capitalize text-zinc-400">
+                      {file.modality} · {formatBytes(file.byte_size, 1)}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleting(file);
+                      setError(null);
+                    }}
+                    className="btn-icon h-7 w-7 hover:text-red-300"
+                    aria-label={`Remove ${file.file_name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-6">
+                  <StatusBadge status={file.processing_status} />
+                  <time
+                    className="text-[11px] text-zinc-400"
+                    title={new Date(file.created_at).toLocaleString()}
+                  >
+                    {formatDate(file.created_at)}
+                  </time>
+                </div>
+                {file.error_message && (
+                  <p className="mt-2 break-words pl-6 text-xs leading-5 text-amber-200">
+                    {file.error_message}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {tables.length > 0 && (
+        <section className="border-t border-zinc-800 pt-4">
+          <h3 className="eyebrow mb-3">Extracted tables · {tables.length}</h3>
+          <div className="space-y-1">
+            {visibleTables.map((table) => (
+              <button
+                key={table.id}
+                onClick={() => onPreviewTable(table)}
+                className="flex w-full items-start gap-2 rounded-md py-2 text-left hover:bg-zinc-800/50"
+              >
+                <Table2 className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-zinc-200">
+                    {table.table_name}
+                  </span>
+                  <span className="mt-1 block text-[11px] text-zinc-400">
+                    {table.row_count.toLocaleString()} rows ·{" "}
+                    {table.column_count} columns
+                  </span>
+                </span>
+              </button>
+            ))}
+            {visibleTables.length === 0 && (
+              <p className="meta-copy">No tables match your search.</p>
+            )}
+          </div>
+        </section>
+      )}
+      <Dialog
+        compact
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title="Remove source?"
+        description="This removes the file from the workspace index. This action cannot be undone."
+        busy={busy}
+      >
+        <p className="mb-4 break-words rounded-md border border-zinc-800 p-3 text-sm">
+          {deleting?.file_name}
+        </p>
+        {error && <ErrorState message={error} />}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            disabled={busy}
+            className="btn-secondary"
+            onClick={() => setDeleting(null)}
+          >
+            Keep source
+          </button>
+          <button
+            disabled={busy}
+            className="btn-destructive"
+            onClick={() => void remove()}
+          >
+            {busy ? "Removing" : "Remove source"}
+          </button>
+        </div>
+      </Dialog>
     </div>
   );
 }

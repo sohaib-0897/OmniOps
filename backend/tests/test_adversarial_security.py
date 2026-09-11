@@ -208,9 +208,8 @@ async def test_adversarial_cross_tenant_idor(
     assert inv_resp.status_code == 403
 
     # Adversarial Attempt 4: Test User attempts to stream victim investigation SSE
-    token = create_access_token(subject=test_user.id)
     stream_resp = await client.get(
-        f"/api/v1/investigations/{victim_session.id}/stream?token={token}"
+        f"/api/v1/investigations/{victim_session.id}/stream", headers=auth_headers
     )
     assert stream_resp.status_code == 403
 

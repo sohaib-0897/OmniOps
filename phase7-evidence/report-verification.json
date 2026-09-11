@@ -1,0 +1,22 @@
+{
+  "report_sections": 28,
+  "original_findings": {
+    "CLOSED": 24,
+    "PARTIALLY_CLOSED": 3,
+    "STILL_OPEN": 2,
+    "OBSOLETE": 1
+  },
+  "application_findings": {
+    "HIGH": 7,
+    "MEDIUM": 11,
+    "LOW": 1
+  },
+  "final_backend": {
+    "passed": 176,
+    "failed": 2
+  },
+  "explicit_evidence_references_checked": 18,
+  "audit_sha256": "f52705af7e850c00103a39d29d11c28d91803916fdb22d2cfdf946f23793940c",
+  "classification": "NOT_RELEASE_READY",
+  "consistency_check": "PASS"
+}

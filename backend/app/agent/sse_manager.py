@@ -1,8 +1,6 @@
 import asyncio
 import json
-import uuid
-from typing import Dict, Any, AsyncGenerator, Set
-from pydantic import BaseModel
+from typing import Dict, Any, Set
 
 class SSEBroadcaster:
     """Manages active Server-Sent Event subscriber queues and session cancellation tokens."""
@@ -12,8 +10,9 @@ class SSEBroadcaster:
         self._subscribers: Dict[str, Set[asyncio.Queue]] = {}
         # Maps session_id (str) -> asyncio.Event (cancellation token)
         self._cancellation_events: Dict[str, asyncio.Event] = {}
-        # Maps session_id (str) -> List[str] (buffered event payloads for replay)
-        self._history: Dict[str, list] = {}
+        # Durable replay is served from runtime_events in PostgreSQL. This local
+        # broadcaster deliberately retains no history across emissions.
+        self._queue_size = 100
 
     def get_cancellation_event(self, session_id: str) -> asyncio.Event:
         if session_id not in self._cancellation_events:
@@ -32,15 +31,10 @@ class SSEBroadcaster:
         return False
 
     def subscribe(self, session_id: str) -> asyncio.Queue:
-        queue = asyncio.Queue()
+        queue = asyncio.Queue(maxsize=self._queue_size)
         if session_id not in self._subscribers:
             self._subscribers[session_id] = set()
         self._subscribers[session_id].add(queue)
-
-        # Replay past buffered events so late-connecting or reconnected subscribers never miss events
-        if session_id in self._history:
-            for event_payload in self._history[session_id]:
-                queue.put_nowait(event_payload)
 
         return queue
 
@@ -51,25 +45,22 @@ class SSEBroadcaster:
                 del self._subscribers[session_id]
 
     async def emit(self, session_id: str, event_type: str, data: Dict[str, Any]):
-        """Emit sanitized SSE event to all connected listeners and store in history."""
+        """Emit to local listeners without allowing slow clients to grow RAM."""
         payload = f"event: {event_type}\ndata: {json.dumps(data, default=str)}\n\n"
-
-        if session_id not in self._history:
-            self._history[session_id] = []
-        self._history[session_id].append(payload)
 
         if session_id in self._subscribers:
             dead_queues = set()
             for q in self._subscribers[session_id]:
                 try:
                     q.put_nowait(payload)
-                except Exception:
+                except (asyncio.QueueFull, RuntimeError):
                     dead_queues.add(q)
                     
             for dq in dead_queues:
                 self._subscribers[session_id].discard(dq)
 
     def clear_history(self, session_id: str):
-        self._history.pop(session_id, None)
+        # Compatibility shim: persisted runtime events are the replay store.
+        return None
 
 sse_manager = SSEBroadcaster()

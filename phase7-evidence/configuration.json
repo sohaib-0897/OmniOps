@@ -1,0 +1,42 @@
+{
+  "missing_secret": {
+    "startup_exit": 1
+  },
+  "missing_runner_token": {
+    "startup_exit": 1
+  },
+  "missing_database": {
+    "startup_exit": 1
+  },
+  "insecure_cookie": {
+    "startup_exit": 1
+  },
+  "development": {
+    "startup_exit": 0
+  },
+  "test": {
+    "startup_exit": 0
+  },
+  "compose_config_exit": 0,
+  "capabilities": {
+    "missing_all": {
+      "pdf_native_text": "AVAILABLE",
+      "pdf_ocr": "AVAILABLE",
+      "image_ocr": "AVAILABLE",
+      "image_semantic_vision": "UNAVAILABLE",
+      "audio_transcription": "UNAVAILABLE",
+      "audio_timestamps": "UNAVAILABLE",
+      "audio_diarization": "NOT_SUPPORTED"
+    },
+    "configured_key_presence_only": {
+      "pdf_native_text": "AVAILABLE",
+      "pdf_ocr": "AVAILABLE",
+      "image_ocr": "AVAILABLE",
+      "image_semantic_vision": "AVAILABLE",
+      "audio_transcription": "AVAILABLE",
+      "audio_timestamps": "AVAILABLE",
+      "audio_diarization": "AVAILABLE"
+    }
+  },
+  "capability_fixture": "Configuration-presence test only; placeholder key makes no provider request."
+}

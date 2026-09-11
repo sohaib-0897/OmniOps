@@ -1,0 +1,414 @@
+{
+  "checks": [
+    {
+      "name": "login",
+      "value": true
+    },
+    {
+      "name": "refresh_and_storage",
+      "value": {
+        "refreshCookie": [
+          {
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "Lax"
+          }
+        ],
+        "localStorage": 0,
+        "sessionStorage": 0
+      }
+    },
+    {
+      "name": "search_empty",
+      "value": true
+    },
+    {
+      "name": "dialog_focus_containment",
+      "value": true
+    },
+    {
+      "name": "animated_close",
+      "value": {
+        "openImmediately": 1,
+        "closedAfter220ms": true,
+        "focusRestored": true
+      }
+    },
+    {
+      "name": "reduced_motion_close",
+      "value": true
+    },
+    {
+      "name": "source_xss",
+      "value": {
+        "scriptNodes": 0,
+        "imageNodes": 0,
+        "dialogs": 0
+      }
+    },
+    {
+      "name": "provider_failure_explicit",
+      "value": true
+    },
+    {
+      "name": "actual_worker_report",
+      "value": {
+        "bodyHasApplicationError": true,
+        "pageErrors": [
+          "Cannot read properties of undefined (reading 'flatMap')"
+        ]
+      }
+    },
+    {
+      "name": "report_xss",
+      "value": {
+        "dialogs": 0,
+        "scriptPayloadElements": 0
+      }
+    },
+    {
+      "name": "stream_reconnect",
+      "value": {
+        "additionalRequests": 1,
+        "requests": [
+          {
+            "queryToken": false,
+            "bearer": true
+          },
+          {
+            "queryToken": false,
+            "bearer": true
+          },
+          {
+            "queryToken": false,
+            "bearer": true
+          },
+          {
+            "queryToken": false,
+            "bearer": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "touch_targets",
+      "value": [
+        {
+          "label": "New investigation",
+          "width": 42,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "name": "css_zoom_200",
+      "value": {
+        "overflow": false,
+        "limitation": "CSS zoom sanity, not browser UI zoom certification"
+      }
+    },
+    {
+      "name": "logout_reload",
+      "value": true
+    },
+    {
+      "name": "done",
+      "value": true
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "auth-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "auth-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "auth-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "auth-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "dashboard-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "dashboard-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "dashboard-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "dashboard-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "dialog-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "dialog-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "dialog-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "dialog-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "workspace-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "workspace-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "workspace-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "workspace-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "source-xss-preview-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "source-xss-preview-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "source-xss-preview-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "source-xss-preview-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "sources-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "investigation-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "trace-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "sources-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "investigation-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "trace-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "sources-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "investigation-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "trace-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "sources-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "investigation-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "trace-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "provider-failure-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "provider-failure-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "provider-failure-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "provider-failure-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "actual-worker-completion-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "actual-worker-completion-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "actual-worker-completion-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "actual-worker-completion-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "authored-report-xss-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "authored-report-xss-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "authored-report-xss-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "authored-report-xss-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "file": "not-found-1440.png",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "file": "not-found-1280.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false
+    },
+    {
+      "file": "not-found-768.png",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "file": "not-found-390.png",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [
+    "Cannot read properties of undefined (reading 'flatMap')"
+  ],
+  "xssDialogs": 0,
+  "fixture": "AUTHORED PHASE 7 REPORT FIXTURE — not agent output"
+}

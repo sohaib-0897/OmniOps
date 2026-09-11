@@ -1,213 +1,189 @@
 "use client";
-
-import React, { useState, useRef } from "react";
-import {
-  UploadCloud,
-  FileText,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  X,
-} from "lucide-react";
+import { useRef, useState } from "react";
+import { AlertCircle, Check, Clock3, FileUp, Loader2, X } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import { formatBytes } from "@/lib/utils";
 
 interface Props {
   workspaceId: string;
   onUploadComplete: () => void;
 }
-
-interface UploadingFile {
+interface Upload {
   name: string;
   size: number;
-  status: "pending" | "uploading" | "success" | "error";
+  status: "queued" | "uploading" | "accepted" | "failed";
   error?: string;
 }
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const ALLOWED_EXTS = [
-  ".pdf", ".docx", ".xlsx", ".xls", ".csv", ".tsv",
-  ".mp3", ".wav", ".m4a", ".ogg", ".png", ".jpg", ".jpeg", ".txt"
+const ALLOWED = [
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".xls",
+  ".csv",
+  ".tsv",
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".ogg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".txt",
 ];
-
-const MODALITY_PILLS = [
-  "PDF", "XLSX", "CSV", "Audio", "DOCX", "Images", "TXT"
-];
-
 export function FileUploadZone({ workspaceId, onUploadComplete }: Props) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [fileQueue, setFileQueue] = useState<UploadingFile[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const validateFile = (file: File): string | null => {
-    if (file.size > MAX_FILE_SIZE) {
-      return `File exceeds 50MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`;
-    }
-    const ext = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALLOWED_EXTS.includes(ext)) {
-      return `Unsupported file format '${ext}'.`;
-    }
-    return null;
-  };
-
-  const handleFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setErrorMessage(null);
-
-    const initialQueue: UploadingFile[] = Array.from(files).map((f) => ({
-      name: f.name,
-      size: f.size,
-      status: "pending",
-    }));
-    setFileQueue(initialQueue);
-    setIsUploading(true);
-
-    let anySuccess = false;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const validationError = validateFile(file);
-
-      if (validationError) {
-        setFileQueue((prev) =>
-          prev.map((item, idx) =>
-            idx === i ? { ...item, status: "error", error: validationError } : item
-          )
-        );
+  const input = useRef<HTMLInputElement>(null);
+  const busyRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState<Upload[]>([]);
+  const upload = async (selected: FileList | null) => {
+    if (!selected?.length || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    const files = Array.from(selected);
+    setQueue(
+      files.map((file) => ({
+        name: file.name,
+        size: file.size,
+        status: "queued",
+      })),
+    );
+    const update = (index: number, change: Partial<Upload>) =>
+      setQueue((items) =>
+        items.map((item, current) =>
+          current === index ? { ...item, ...change } : item,
+        ),
+      );
+    for (const [index, file] of files.entries()) {
+      const extension = `.${file.name.split(".").pop()?.toLowerCase() || ""}`;
+      if (file.size > 50 * 1024 * 1024 || !ALLOWED.includes(extension)) {
+        update(index, {
+          status: "failed",
+          error:
+            file.size > 50 * 1024 * 1024
+              ? "Choose a file smaller than 50 MB."
+              : "This file format is not supported.",
+        });
         continue;
       }
-
-      setFileQueue((prev) =>
-        prev.map((item, idx) => (idx === i ? { ...item, status: "uploading" } : item))
-      );
-
+      update(index, { status: "uploading" });
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        await apiClient.post(`/workspaces/${workspaceId}/files`, formData);
-
-        setFileQueue((prev) =>
-          prev.map((item, idx) => (idx === i ? { ...item, status: "success" } : item))
-        );
-        anySuccess = true;
-      } catch (err: any) {
-        setFileQueue((prev) =>
-          prev.map((item, idx) =>
-            idx === i ? { ...item, status: "error", error: err.message || "Upload failed." } : item
-          )
-        );
+        const form = new FormData();
+        form.append("file", file);
+        await apiClient.post(`/workspaces/${workspaceId}/files`, form);
+        update(index, { status: "accepted" });
+        onUploadComplete();
+      } catch (err) {
+        update(index, {
+          status: "failed",
+          error:
+            err instanceof Error
+              ? err.message
+              : "Upload failed. Select the file again to retry.",
+        });
       }
     }
-
-    setIsUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (anySuccess) {
-      onUploadComplete();
-    }
+    busyRef.current = false;
+    setBusy(false);
+    if (input.current) input.current.value = "";
   };
-
   return (
-    <div className="space-y-3 font-sans">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-          handleFiles(e.dataTransfer.files);
-        }}
-        onClick={() => fileInputRef.current?.click()}
-        className={`group border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
-          isDragging
-            ? "border-zinc-500 bg-zinc-900"
-            : "border-zinc-800 hover:border-zinc-700 bg-zinc-950 hover:bg-zinc-900/50"
-        } ${isUploading ? "opacity-60 pointer-events-none" : ""}`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
-          accept=".pdf,.docx,.xlsx,.xls,.csv,.tsv,.mp3,.wav,.png,.jpg,.jpeg,.txt"
-        />
-
-        <div className="flex flex-col items-center justify-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center group-hover:text-white transition-colors">
-            <UploadCloud className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-white">
-              {isUploading ? "Ingesting Lakehouse Data..." : "Upload Business Lakehouse Data"}
-            </p>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              Drag & drop Excel, CSV, PDF, Audio, or Images
-            </p>
-          </div>
-
-          {/* Monochrome Modality Pills */}
-          <div className="flex items-center gap-1.5 flex-wrap justify-center mt-1">
-            {MODALITY_PILLS.map((label) => (
-              <span
-                key={label}
-                className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded border border-zinc-800 bg-zinc-900 text-zinc-400"
-              >
-                {label}
-              </span>
-            ))}
-          </div>
-        </div>
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="section-title">Upload sources</h2>
+        <span className="text-[11px] text-zinc-400">50 MB / file</span>
       </div>
-
-      {/* Per-File Upload Status Queue */}
-      {fileQueue.length > 0 && (
-        <div className="space-y-1.5 p-3 rounded-xl bg-zinc-950 border border-zinc-800">
-          <div className="flex items-center justify-between text-xs font-bold text-zinc-300 pb-1 border-b border-zinc-850">
-            <span>Upload Queue ({fileQueue.length})</span>
-            {!isUploading && (
+      <input
+        ref={input}
+        type="file"
+        multiple
+        hidden
+        onChange={(event) => void upload(event.target.files)}
+        accept={ALLOWED.join(",")}
+        aria-label="Choose source files"
+      />
+      <button
+        disabled={busy}
+        onClick={() => input.current?.click()}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          void upload(event.dataTransfer.files);
+        }}
+        className={`flex w-full items-center gap-3 rounded-md border border-dashed p-4 text-left transition-colors ${dragging ? "border-zinc-200 bg-zinc-800" : "border-zinc-600 bg-[#121315] hover:border-zinc-400"}`}
+      >
+        <FileUp className="h-5 w-5 shrink-0 text-zinc-300" />
+        <span>
+          <span className="block text-xs font-medium">
+            {busy ? "Uploading sources" : "Drop files or browse"}
+          </span>
+          <span className="mt-1 block text-[11px] leading-5 text-zinc-400">
+            Documents, tables, images, and audio
+          </span>
+        </span>
+      </button>
+      {queue.length > 0 && (
+        <div className="rounded-md border border-zinc-800">
+          <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+            <span className="text-xs text-zinc-300">
+              Upload queue · {queue.length}
+            </span>
+            {!busy && (
               <button
-                type="button"
-                onClick={() => setFileQueue([])}
-                className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
-                title="Clear queue"
+                className="btn-icon h-6 w-6"
+                aria-label="Clear upload queue"
+                onClick={() => setQueue([])}
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-            {fileQueue.map((item, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-xs p-2 rounded-lg bg-zinc-900 border border-zinc-800"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  {item.status === "uploading" && <Loader2 className="w-3.5 h-3.5 text-zinc-300 animate-spin shrink-0" />}
-                  {item.status === "success" && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-200 shrink-0" />}
-                  {item.status === "error" && <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
-                  {item.status === "pending" && <FileText className="w-3.5 h-3.5 text-zinc-500 shrink-0" />}
-                  <span className="truncate text-zinc-200 font-medium">{item.name}</span>
+          <div
+            aria-live="polite"
+            className="max-h-64 divide-y divide-zinc-800 overflow-y-auto"
+          >
+            {queue.map((item, index) => {
+              const Icon =
+                item.status === "uploading"
+                  ? Loader2
+                  : item.status === "accepted"
+                    ? Check
+                    : item.status === "failed"
+                      ? AlertCircle
+                      : Clock3;
+              return (
+                <div key={`${item.name}-${index}`} className="px-3 py-2.5">
+                  <div className="flex items-start gap-2">
+                    <Icon
+                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.status === "uploading" ? "animate-spin" : ""} ${item.status === "failed" ? "text-red-300" : "text-zinc-400"}`}
+                    />
+                    <span className="min-w-0 flex-1 break-words text-xs text-zinc-200">
+                      {item.name}
+                    </span>
+                  </div>
+                  <p className="mt-1 pl-5 text-[11px] capitalize text-zinc-400">
+                    {item.status} · {formatBytes(item.size, 1)}
+                  </p>
+                  {item.error && (
+                    <p className="mt-1 break-words pl-5 text-xs leading-5 text-red-200">
+                      {item.error}
+                    </p>
+                  )}
                 </div>
-                <span className="text-[10px] text-zinc-400 shrink-0 font-mono">
-                  {(item.size / 1024).toFixed(0)} KB
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
-
-      {errorMessage && (
-        <div className="flex items-center gap-2 text-xs text-zinc-200 bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-          <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-    </div>
+      <p className="text-[11px] leading-5 text-zinc-400">
+        Processing and extraction status appear in Sources. Upload acceptance
+        does not mean extraction is complete.
+      </p>
+    </section>
   );
 }

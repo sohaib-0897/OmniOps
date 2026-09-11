@@ -1,375 +1,497 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { apiClient } from "@/lib/api-client";
-import { AuthSession, Workspace } from "@/types/api";
 import {
-  Layers,
-  ShieldCheck,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
   ArrowRight,
-  Plus,
-  Lock,
-  Mail,
-  User as UserIcon,
-  Loader2,
   Database,
-  FileCheck,
-  Cpu,
-  Sparkles,
+  FileText,
+  Layers3,
+  Loader2,
+  Plus,
+  Search,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { formatDate } from "@/lib/utils";
+import { AuthSession, User, Workspace } from "@/types/api";
+import {
+  BrandMark,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/ui/Primitives";
+import { Dialog } from "@/components/ui/Dialog";
 
-export default function LandingAndWorkspacePicker() {
+export default function HomePage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [fetchingWorkspaces, setFetchingWorkspaces] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const token = localStorage.getItem("omniops_token");
-    if (token) {
-      fetchWorkspaces();
-    }
-  }, []);
-
-  const fetchWorkspaces = async () => {
-    setFetchingWorkspaces(true);
-    try {
-      const user = await apiClient.get<any>("/auth/me");
-      setCurrentUser(user);
-      const wsList = await apiClient.get<Workspace[]>("/workspaces");
-      setWorkspaces(wsList || []);
-    } catch (e) {
-      apiClient.clearToken();
-      setCurrentUser(null);
-    } finally {
-      setFetchingWorkspaces(false);
-    }
-  };
-
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
+  const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
-
     try {
-      if (isLogin) {
-        const res = await apiClient.post<AuthSession>("/auth/login", { email, password });
-        apiClient.setToken(res.token.access_token);
-        setCurrentUser(res.user);
-      } else {
-        const res = await apiClient.post<AuthSession>("/auth/register", {
-          email,
-          password,
-          full_name: fullName,
-        });
-        apiClient.setToken(res.token.access_token);
-        setCurrentUser(res.user);
-      }
-      await fetchWorkspaces();
-    } catch (err: any) {
-      setError(err.message || "Authentication failed.");
+      const items = await apiClient.get<Workspace[]>("/workspaces");
+      setWorkspaces(items);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Workspaces could not be loaded.",
+      );
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleCreateWorkspace = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newWorkspaceName.trim()) return;
-    setCreatingWorkspace(true);
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    setExpired(
+      new URLSearchParams(window.location.search).get("session") === "expired",
+    );
+    void (async () => {
+      try {
+        const authenticated =
+          Boolean(apiClient.getAccessToken()) || (await apiClient.refresh());
+        if (authenticated) {
+          const current = await apiClient.get<User>("/auth/me");
+          if (alive) {
+            setUser(current);
+            await load();
+          }
+        }
+      } catch (err) {
+        if (alive)
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not restore your session. Please try again.",
+          );
+      } finally {
+        if (alive) setRestoring(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [load]);
+  const authenticate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const newWs = await apiClient.post<Workspace>("/workspaces", {
-        name: newWorkspaceName.trim(),
-        description: "Multimodal Decision Intelligence Lakehouse",
-      });
-      router.push(`/workspaces/${newWs.id}`);
-    } catch (err: any) {
-      setError(err.message || "Failed to create workspace.");
+      const result = await apiClient.post<AuthSession>(
+        isLogin ? "/auth/login" : "/auth/register",
+        isLogin
+          ? { email, password }
+          : { email, password, full_name: fullName },
+      );
+      apiClient.setToken(result.token.access_token);
+      setUser(result.user);
+      setPassword("");
+      setExpired(false);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Sign-in failed. Check your details and try again.",
+      );
     } finally {
-      setCreatingWorkspace(false);
+      setBusy(false);
     }
   };
-
-  const handleLogout = () => {
-    apiClient.clearToken();
-    setCurrentUser(null);
-    setWorkspaces([]);
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy || !name.trim()) return;
+    setBusy(true);
+    setCreateError(null);
+    try {
+      const workspace = await apiClient.post<Workspace>("/workspaces", {
+        name: name.trim(),
+      });
+      router.push(`/workspaces/${workspace.id}`);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Workspace could not be created.",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
+  const logout = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiClient.logout();
+      setUser(null);
+      setWorkspaces([]);
+      // Drop all protected component/SWR state before another account signs in.
+      window.location.replace("/");
+    } catch {
+      setError(
+        "Sign-out could not be confirmed. Check your connection and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const visible = useMemo(
+    () =>
+      [...workspaces]
+        .filter((item) =>
+          item.name.toLowerCase().includes(search.toLowerCase()),
+        )
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    [workspaces, search],
+  );
+  const total = (key: "documents_count" | "tables_count") =>
+    workspaces.every((item) => item[key] != null)
+      ? workspaces.reduce((sum, item) => sum + item[key]!, 0).toLocaleString()
+      : "Unavailable";
 
-  return (
-    <div
-      suppressHydrationWarning
-      className="min-h-screen bg-black text-zinc-100 flex flex-col justify-between relative overflow-hidden font-sans selection:bg-zinc-800 selection:text-white"
-    >
-      {/* Header */}
-      <header className="border-b border-zinc-850 bg-black/90 backdrop-blur-md px-6 sm:px-10 py-4 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-750 text-white flex items-center justify-center font-bold">
-            <Layers className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="font-bold text-sm tracking-tight text-white block">OmniOps</span>
-            <span className="text-[10px] text-zinc-400 font-mono block -mt-0.5">
-              Evidence-Grounded Decision Intelligence
-            </span>
-          </div>
+  if (restoring)
+    return (
+      <main
+        id="main-content"
+        className="app-page flex items-center justify-center p-6"
+      >
+        <div className="w-full max-w-sm space-y-8">
+          <BrandMark />
+          <LoadingState label="Restoring your workspace" />
         </div>
-
-        {mounted && currentUser && (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
-              <span className="w-2 h-2 rounded-full bg-zinc-400" />
-              <span>Signed in as <strong className="text-white font-semibold">{currentUser.full_name}</strong></span>
-            </div>
+      </main>
+    );
+  if (!user)
+    return (
+      <div className="app-page flex min-h-dvh flex-col">
+        <header className="app-container py-6">
+          <BrandMark />
+        </header>
+        <main
+          id="main-content"
+          className="flex flex-1 items-center justify-center px-5 py-10"
+        >
+          <section className="auth-panel content-enter">
+            <p className="eyebrow">Workspace access</p>
+            <h1 className="page-title mt-3">
+              {isLogin ? "Welcome back" : "Create your account"}
+            </h1>
+            <p className="body-copy mt-2">
+              Investigate questions. Inspect the evidence.
+            </p>
+            {expired && (
+              <p
+                role="status"
+                className="mt-5 rounded-md border border-zinc-700 p-3 text-xs text-zinc-300"
+              >
+                Your session has ended. Sign in to continue.
+              </p>
+            )}
+            <form onSubmit={authenticate} aria-busy={busy} className="mt-8 space-y-5">
+              {!isLogin && (
+                <div>
+                  <label htmlFor="full-name" className="field-label">
+                    Full name
+                  </label>
+                  <input
+                    id="full-name"
+                    autoComplete="name"
+                    required
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    className="field h-11"
+                  />
+                </div>
+              )}
+              <div>
+                <label htmlFor="email" className="field-label">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="field h-11"
+                  placeholder="name@company.com"
+                  aria-describedby={error ? "auth-error" : undefined}
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="field-label">
+                  Password
+                </label>
+                <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="field h-11 pr-12"
+                  aria-describedby={error ? "auth-error" : undefined}
+                />
+                <button type="button" className="btn-icon absolute right-0.5 top-0.5" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+                </div>
+              </div>
+              {error && (
+                <div id="auth-error">
+                  <ErrorState title="Unable to sign in" message={error} />
+                </div>
+              )}
+              <button disabled={busy} className="btn-primary h-11 w-full">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                <span>{busy ? (isLogin ? "Signing in…" : "Creating account…") : isLogin ? "Sign in" : "Create account"}</span>
+                <ArrowRight className="ml-auto h-4 w-4" />
+              </button>
+              <p role="status" className="sr-only">{busy ? (isLogin ? "Signing in" : "Creating account") : ""}</p>
+            </form>
+            <p className="mt-6 text-center text-xs text-zinc-400">
+              {isLogin ? "New to OmniOps?" : "Already have an account?"}{" "}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError(null);
+                }}
+                className="ml-1 text-zinc-100 underline decoration-zinc-600 underline-offset-4"
+              >
+                {isLogin ? "Create an account" : "Sign in"}
+              </button>
+            </p>
+          </section>
+        </main>
+        <footer className="py-6 text-center text-xs text-zinc-400">
+          OmniOps · Evidence intelligence
+        </footer>
+      </div>
+    );
+  return (
+    <div className="app-page">
+      <header className="app-topbar">
+        <div className="app-container flex h-16 items-center justify-between gap-4">
+          <BrandMark compact />
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="hidden truncate text-xs text-zinc-400 sm:block">
+              {user.email}
+            </span>
             <button
-              onClick={handleLogout}
-              suppressHydrationWarning
-              className="text-xs text-zinc-400 hover:text-white transition-colors font-medium px-3 py-1 rounded-lg border border-zinc-800 hover:bg-zinc-900 cursor-pointer"
+              onClick={() => void logout()}
+              disabled={busy}
+              className="btn-ghost"
             >
               Sign out
             </button>
           </div>
-        )}
-      </header>
-
-      {/* Main Container */}
-      <main className="flex-1 flex items-center justify-center p-6 sm:p-10 z-10">
-        <div className="w-full max-w-5xl grid md:grid-cols-12 gap-8 lg:gap-12 items-center">
-          {/* Left Brand Showcase */}
-          <div className="md:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-semibold">
-              <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
-              <span>7-Stage Evidence Reference Contract</span>
-            </div>
-
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-[1.15]">
-              Investigate complex business questions with verifiable proof.
-            </h1>
-
-            <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-xl">
-              Upload spreadsheets, PDFs, available audio transcripts, and documents. OmniOps creates
-              analytical DAGs, executes vectorized calculations in DuckDB, verifies claims, and produces
-              transparent evidence lineage with deterministic reference checks.
-            </p>
-
-            <div className="grid sm:grid-cols-2 gap-3 pt-2">
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5 shadow-sm">
-                <div className="font-bold text-xs text-white flex items-center gap-2">
-                  <Database className="w-4 h-4 text-zinc-300" />
-                  DuckDB Vectorized Lakehouse
-                </div>
-                <p className="text-zinc-400 text-xs leading-relaxed">
-                  In-memory analytical SQL with reproducible query hashes.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5 shadow-sm">
-                <div className="font-bold text-xs text-white flex items-center gap-2">
-                  <FileCheck className="w-4 h-4 text-zinc-300" />
-                  7-Stage Verifiable Lineage
-                </div>
-                <p className="text-zinc-400 text-xs leading-relaxed">
-                  Deterministic provenance linking primary excerpts directly to strategic recommendations.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Action / Auth Card */}
-          <div className="md:col-span-5 border border-zinc-800 bg-zinc-950 p-6 sm:p-7 rounded-2xl shadow-2xl space-y-6">
-            {mounted && currentUser ? (
-              /* Workspace Selector */
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-sm font-bold text-white tracking-tight">Select Workspace</h2>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Choose an existing workspace or initialize a new isolated lakehouse.
-                  </p>
-                </div>
-
-                {fetchingWorkspaces ? (
-                  <div className="py-12 flex flex-col items-center justify-center gap-2 text-zinc-500 text-xs">
-                    <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-                    <span>Loading your workspaces...</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {workspaces.map((ws) => (
-                      <div
-                        key={ws.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => router.push(`/workspaces/${ws.id}`)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            router.push(`/workspaces/${ws.id}`);
-                          }
-                        }}
-                        className="group flex items-center justify-between p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-900 hover:border-zinc-700 cursor-pointer transition-all outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center justify-center font-bold text-xs">
-                            <Layers className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors">
-                              {ws.name}
-                            </p>
-                            <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                              {ws.documents_count || 0} files • {ws.tables_count || 0} tables
-                            </p>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Create New Workspace Form */}
-                <form onSubmit={handleCreateWorkspace} suppressHydrationWarning className="pt-4 border-t border-zinc-850 space-y-3">
-                  <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
-                    Create New Workspace
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      suppressHydrationWarning
-                      value={newWorkspaceName}
-                      onChange={(e) => setNewWorkspaceName(e.target.value)}
-                      placeholder="E.g., Q3 Revenue Analysis"
-                      className="flex-1 text-xs bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600 transition-all"
-                    />
-                    <button
-                      type="submit"
-                      suppressHydrationWarning
-                      disabled={!newWorkspaceName.trim() || creatingWorkspace}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-black hover:bg-zinc-200 text-xs font-bold disabled:opacity-40 transition-all cursor-pointer"
-                    >
-                      {creatingWorkspace ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                      <span>Create</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            ) : (
-              /* Auth Form (Login / Register) */
-              <div className="space-y-5" suppressHydrationWarning>
-                <div>
-                  <h2 className="text-base font-bold text-white tracking-tight">
-                    {isLogin ? "Sign in to OmniOps" : "Create OmniOps Account"}
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    {isLogin ? "Enter your credentials to access workspace investigations." : "Get started with evidence-grounded decision intelligence."}
-                  </p>
-                </div>
-
-                <form onSubmit={handleAuth} suppressHydrationWarning className="space-y-3.5">
-                  {!isLogin && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-300">Full Name</label>
-                      <div className="relative">
-                        <UserIcon className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
-                        <input
-                          type="text"
-                          required
-                          suppressHydrationWarning
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          placeholder="Finance Director"
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600 transition-all"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-300">Work Email</label>
-                    <div className="relative">
-                      <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
-                      <input
-                        type="email"
-                        required
-                        suppressHydrationWarning
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="director@company.com"
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-300">Password</label>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
-                      <input
-                        type="password"
-                        required
-                        suppressHydrationWarning
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-600 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {error && (
-                    <div className="text-xs text-zinc-300 bg-zinc-900 p-3 rounded-xl border border-zinc-800 leading-snug">
-                      {error}
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    suppressHydrationWarning
-                    className="w-full py-2.5 rounded-xl bg-white text-black hover:bg-zinc-200 font-bold text-xs disabled:opacity-40 transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer shadow-sm"
-                  >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    <span>{isLogin ? "Sign In" : "Create Account"}</span>
-                  </button>
-                </form>
-
-                <div className="text-center pt-2 border-t border-zinc-850 text-xs text-zinc-400">
-                  <span>{isLogin ? "Don't have an account? " : "Already have an account? "}</span>
-                  <button
-                    type="button"
-                    suppressHydrationWarning
-                    onClick={() => {
-                      setIsLogin(!isLogin);
-                      setError(null);
-                    }}
-                    className="text-white hover:underline font-bold cursor-pointer"
-                  >
-                    {isLogin ? "Register" : "Sign In"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
+      </header>
+      <main id="main-content" className="app-container py-7 sm:py-9">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h1 className="page-title mt-2">Your workspaces</h1>
+            <p className="meta-copy mt-2">
+              Sources, investigations, and the evidence behind your decisions.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setCreateOpen(true);
+              setCreateError(null);
+            }}
+            className="btn-primary"
+          >
+            <Plus className="h-4 w-4" />
+            Create workspace
+          </button>
+        </div>
+        <dl className="surface my-7 grid grid-cols-3 divide-x divide-zinc-700 p-5">
+          {[
+            {
+              label: "Workspaces",
+              value: workspaces.length.toLocaleString(),
+              icon: Layers3,
+            },
+            {
+              label: "Source files",
+              value: total("documents_count"),
+              icon: FileText,
+            },
+            { label: "Tables", value: total("tables_count"), icon: Database },
+          ].map(({ label, value, icon: Icon }) => (
+            <div key={label} className="px-3 first:pl-0 sm:px-6">
+              <dt className="flex items-center gap-2 text-xs text-zinc-400">
+                <Icon className="hidden h-3.5 w-3.5 sm:block" />
+                {label}
+              </dt>
+              <dd className="mt-2 text-xl font-medium tracking-tight sm:text-2xl">
+                {loading ? "—" : value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {error && (
+          <div className="mb-5">
+            <ErrorState message={error} onRetry={() => void load()} />
+          </div>
+        )}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="section-title">Workspace directory</h2>
+          <label className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-3 h-3.5 w-3.5 text-zinc-400" />
+            <input
+              aria-label="Search workspaces"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search workspaces"
+              className="field h-10 pl-9"
+            />
+          </label>
+        </div>
+        {loading ? (
+          <LoadingState label="Loading workspaces" />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            title={search ? "No matching workspaces" : "Start with a workspace"}
+            description={
+              search
+                ? "Try a different name or clear your search."
+                : "Keep related sources and investigations together. Create a workspace, then upload your first source."
+            }
+            action={
+              <button
+                className="btn-secondary"
+                onClick={() => (search ? setSearch("") : setCreateOpen(true))}
+              >
+                {search ? "Clear search" : "Create workspace"}
+              </button>
+            }
+          />
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-zinc-800">
+            <div className="hidden grid-cols-[minmax(0,1fr)_100px_100px_150px_24px] gap-4 border-b border-zinc-800 bg-[#151618] px-5 py-3 text-[11px] font-medium text-zinc-400 md:grid">
+              <span>Name</span>
+              <span className="text-right">Files</span>
+              <span className="text-right">Tables</span>
+              <span>Updated</span>
+              <span />
+            </div>
+            {visible.map((workspace) => (
+              <Link
+                href={`/workspaces/${workspace.id}`}
+                key={workspace.id}
+                className="directory-row group grid grid-cols-[minmax(0,1fr)_24px] items-center gap-4 border-b border-zinc-800 bg-[#181a1e] px-4 py-5 last:border-0 hover:bg-zinc-800/70 sm:px-5 md:grid-cols-[minmax(0,1fr)_100px_100px_150px_24px]"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-700">
+                    <Layers3 className="h-4 w-4 text-zinc-400" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-medium">
+                      {workspace.name}
+                    </h3>
+                    <p className="meta-copy mt-1 truncate">
+                      {workspace.description || "Sources and investigations"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-zinc-400 md:hidden">
+                      {workspace.documents_count == null
+                        ? "Files not reported"
+                        : `${workspace.documents_count} files`}{" "}
+                      · {formatDate(workspace.updated_at)}
+                    </p>
+                  </div>
+                </div>
+                <span className="hidden text-right text-sm text-zinc-300 md:block">
+                  {workspace.documents_count ?? "—"}
+                </span>
+                <span className="hidden text-right text-sm text-zinc-300 md:block">
+                  {workspace.tables_count ?? "—"}
+                </span>
+                <time
+                  title={new Date(workspace.updated_at).toLocaleString()}
+                  className="hidden text-xs text-zinc-400 md:block"
+                >
+                  {formatDate(workspace.updated_at)}
+                </time>
+                <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-zinc-100" />
+              </Link>
+            ))}
+          </div>
+        )}
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-zinc-850 bg-black px-6 sm:px-10 py-4 text-xs text-zinc-500 flex items-center justify-between font-mono">
-        <span>© 2026 OmniOps • Evidence-Grounded Business Intelligence</span>
-        <span>Evidence Reference Contract</span>
-      </footer>
+      <Dialog
+        compact
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create workspace"
+        description="Group the sources for an investigation."
+        busy={busy}
+      >
+        <form onSubmit={create} className="space-y-5">
+          <div>
+            <label htmlFor="workspace-name" className="field-label">
+              Workspace name
+            </label>
+            <input
+              id="workspace-name"
+              autoFocus
+              required
+              maxLength={255}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. Quarterly operating review"
+              className="field"
+              aria-describedby={createError ? "create-error" : undefined}
+            />
+          </div>
+          {createError && (
+            <div id="create-error">
+              <ErrorState message={createError} />
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              disabled={busy}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button disabled={busy || !name.trim()} className="btn-primary">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}Create
+              workspace
+            </button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 }

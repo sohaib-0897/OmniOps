@@ -1,0 +1,22 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/usr/local/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "<string>", line 4, in probe
+  File "/usr/local/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/main.py", line 14, in lifespan
+    settings.validate_production_configuration()
+  File "/app/app/core/config.py", line 179, in validate_production_configuration
+    raise ValueError("Production requires the authenticated remote sandbox runner.")
+ValueError: Production requires the authenticated remote sandbox runner.

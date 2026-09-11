@@ -1,0 +1,47 @@
+# DEVELOPMENT ONLY — NOT PRODUCTION SAFE.
+# This override adds the local Docker-backed runner for contributors. The
+# normal backend service still never receives the Docker Engine socket.
+services:
+  backend:
+    depends_on:
+      sandbox-runner:
+        condition: service_healthy
+    environment:
+      - ENVIRONMENT=development
+      - SANDBOX_EXECUTION_MODE=remote
+      - SANDBOX_RUNNER_URL=http://sandbox-runner:9100
+      - SANDBOX_RUNNER_TOKEN=${SANDBOX_RUNNER_TOKEN:-omniops-local-sandbox-runner-token}
+      - SANDBOX_IMAGE=${SANDBOX_IMAGE:-omniops-python-sandbox:2026.09.05}
+
+  sandbox-image:
+    image: omniops-python-sandbox:2026.09.05
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sandbox
+    entrypoint: ["/bin/true"]
+    command: []
+    restart: "no"
+
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sandbox-runner
+    restart: always
+    depends_on:
+      sandbox-image:
+        condition: service_completed_successfully
+    environment:
+      - SANDBOX_IMAGE=omniops-python-sandbox:2026.09.05
+      - SANDBOX_RUNNER_TOKEN=${SANDBOX_RUNNER_TOKEN:-omniops-local-sandbox-runner-token}
+      - SANDBOX_MAX_MEMORY_MB=${SANDBOX_MAX_MEMORY_MB:-256}
+      - SANDBOX_MAX_PIDS=${SANDBOX_MAX_PIDS:-32}
+      - SANDBOX_CPU_LIMIT=${SANDBOX_CPU_LIMIT:-1.0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "9100"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health', timeout=2)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10

@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole
+from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole, UserSession
 from app.models.investigation import InvestigationSession, InvestigationStatus
 from app.core.security import create_access_token, get_password_hash
 
@@ -105,8 +106,7 @@ async def test_unauthorized_sse_stream_cross_tenant_denial(
     await db_session.commit()
 
     # Attempt to stream foreign investigation using test_user token
-    token = create_access_token(subject=test_user.id)
-    resp = await client.get(f"/api/v1/investigations/{foreign_session.id}/stream?token={token}")
+    resp = await client.get(f"/api/v1/investigations/{foreign_session.id}/stream", headers=auth_headers)
     assert resp.status_code == 403
     assert "Access denied" in resp.json()["detail"]
 
@@ -133,7 +133,8 @@ async def test_viewer_role_mutating_restrictions(
     db_session.add(viewer_mem)
     await db_session.commit()
 
-    viewer_token = create_access_token(subject=viewer_user.id)
+    now = datetime.now(timezone.utc); viewer_session = UserSession(user_id=viewer_user.id, expires_at=now + timedelta(days=1), last_used_at=now); db_session.add(viewer_session); await db_session.commit()
+    viewer_token = create_access_token(subject=viewer_user.id, session_id=viewer_session.id)
     viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
 
     # 1. Viewer CAN read workspace details

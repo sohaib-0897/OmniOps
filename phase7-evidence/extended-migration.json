@@ -1,0 +1,20 @@
+{
+  "migration-empty": {
+    "exit": 0
+  },
+  "migration-down": {
+    "exit": 0
+  },
+  "migration-up": {
+    "exit": 0
+  },
+  "migration-head": {
+    "exit": 0
+  },
+  "backup_restore": {
+    "dump_exit": 0,
+    "restore_exit": 0,
+    "restored_marker": "AUTHORED_BACKUP_FIXTURE",
+    "restored_head": "20260911_phase6_sessions"
+  }
+}

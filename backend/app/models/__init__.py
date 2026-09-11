@@ -1,5 +1,5 @@
 from app.models.base import BaseMixin, GUID
-from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole
+from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole, UserSession, RefreshToken, RateLimitBucket
 from app.models.document import (
     SourceDocument, 
     DocumentChunk, 
@@ -28,6 +28,7 @@ __all__ = [
     "Workspace",
     "WorkspaceMembership",
     "WorkspaceRole",
+    "UserSession", "RefreshToken", "RateLimitBucket",
     "SourceDocument",
     "DocumentChunk",
     "TabularDataset",

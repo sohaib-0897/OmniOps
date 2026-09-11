@@ -1,0 +1,90 @@
+{
+  "readiness": {
+    "A": 200,
+    "B": 200
+  },
+  "cookie_flags": {
+    "http_only": true,
+    "secure": true,
+    "samesite_lax": true
+  },
+  "duplicate_file_orphan": {
+    "same_source_id": true,
+    "physical_files": 2,
+    "database_sources": 1
+  },
+  "real_worker_investigation": {
+    "state": "completed",
+    "failure_code": null,
+    "final_response_keys": [
+      "status",
+      "outputs"
+    ],
+    "evidence": 0,
+    "claims": 0,
+    "registered_tools": [
+      "hybrid_document_search"
+    ],
+    "created_boundary_recovered": false
+  },
+  "cross_tenant_http": {
+    "/workspaces/2b0b8eec-d029-4b43-ae15-988f8b0392ca": 403,
+    "/workspaces/2b0b8eec-d029-4b43-ae15-988f8b0392ca/files": 403,
+    "/workspaces/2b0b8eec-d029-4b43-ae15-988f8b0392ca/files/ac11e8cd-8f29-42ae-8993-459abc71d54d/preview": 403,
+    "/workspaces/2b0b8eec-d029-4b43-ae15-988f8b0392ca/tables": 403,
+    "/investigations/7ee28521-2992-4b56-8f15-998acd111572": 403,
+    "/investigations/7ee28521-2992-4b56-8f15-998acd111572/evidence": 403,
+    "/investigations/7ee28521-2992-4b56-8f15-998acd111572/claims": 404,
+    "/investigations/7ee28521-2992-4b56-8f15-998acd111572/calculations": 404,
+    "/investigations/7ee28521-2992-4b56-8f15-998acd111572/stream": 403
+  },
+  "investigation_existence_oracle": {
+    "known_foreign": 403,
+    "random": 404
+  },
+  "auth_invalid": {
+    "missing": 401,
+    "malformed": 401,
+    "query_bearer": 401
+  },
+  "refresh_replay": {
+    "replay": 401,
+    "renewed_access_after_replay": 401
+  },
+  "origin": {
+    "bad_refresh": 403,
+    "bad_preflight": 400,
+    "good_preflight": 200
+  },
+  "sse_replay_restart": {
+    "events": 40,
+    "cross_worker_cursor": true,
+    "A_sigkill_B_continues": true,
+    "restart_exact_history": true
+  },
+  "performance": {
+    "requests": 100,
+    "concurrency": 10,
+    "held_sse": 20,
+    "statuses": {
+      "200": 100
+    },
+    "p50_ms": 83.79,
+    "p95_ms": 495.66,
+    "db_activity": {
+      "active": 1,
+      "idle": 11
+    },
+    "capacity_claim": false
+  },
+  "unmatched_metrics_growth": {
+    "unique_untrusted_path_labels": 160,
+    "before_bytes": 904,
+    "after_bytes": 18564,
+    "bounded_route_labels": false
+  },
+  "logout_wrong_secret": {
+    "logout": 200,
+    "legitimate_access_after_forgery": 401
+  }
+}

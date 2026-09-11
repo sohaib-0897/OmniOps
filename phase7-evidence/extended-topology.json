@@ -1,0 +1,127 @@
+{
+  "containers": {
+    "a": {
+      "image_id": "sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71",
+      "user": "10001:10001",
+      "read_only": true,
+      "privileged": false,
+      "cap_drop": null,
+      "security_opt": null,
+      "health": "healthy",
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/app/storage"
+        }
+      ]
+    },
+    "b": {
+      "image_id": "sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71",
+      "user": "10001:10001",
+      "read_only": true,
+      "privileged": false,
+      "cap_drop": null,
+      "security_opt": null,
+      "health": "healthy",
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/app/storage"
+        }
+      ]
+    },
+    "worker": {
+      "image_id": "sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71",
+      "user": "10001:10001",
+      "read_only": true,
+      "privileged": false,
+      "cap_drop": null,
+      "security_opt": null,
+      "health": "healthy",
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/app/storage"
+        }
+      ]
+    },
+    "front": {
+      "image_id": "sha256:0eb33ddb35298fd09afb1104a6abf942fbde79e086bf498ee20215a9514544c6",
+      "user": "10001:10001",
+      "read_only": true,
+      "privileged": false,
+      "cap_drop": null,
+      "security_opt": null,
+      "health": "healthy",
+      "mounts": []
+    },
+    "runner": {
+      "image_id": "sha256:333210bc42482a213c5c68b5fad45862b94bc5c7a92701d80439545f56e541e0",
+      "user": "root",
+      "read_only": false,
+      "privileged": false,
+      "cap_drop": null,
+      "security_opt": null,
+      "health": "healthy",
+      "mounts": [
+        {
+          "type": "bind",
+          "destination": "/var/run/docker.sock"
+        }
+      ]
+    }
+  },
+  "catalog": {
+    "head": "20260911_phase6_sessions",
+    "indexes": [
+      "CREATE UNIQUE INDEX document_chunks_pkey ON public.document_chunks USING btree (id)",
+      "CREATE INDEX ix_document_chunks_embedding_hnsw ON public.document_chunks USING hnsw (embedding vector_cosine_ops) WHERE (embedding IS NOT NULL)",
+      "CREATE INDEX ix_document_chunks_search_vector_gin ON public.document_chunks USING gin (search_vector)",
+      "CREATE INDEX ix_document_chunks_source_id ON public.document_chunks USING btree (source_id)",
+      "CREATE INDEX ix_document_chunks_workspace_id ON public.document_chunks USING btree (workspace_id)",
+      "CREATE INDEX ix_document_chunks_workspace_source ON public.document_chunks USING btree (workspace_id, source_id)"
+    ],
+    "extensions": [
+      "plpgsql",
+      "vector"
+    ],
+    "rls_tables": []
+  },
+  "normal_readiness": {
+    "code": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ready",
+        "checks": {
+          "database": "ready",
+          "pgvector": "ready",
+          "migrations": "ready",
+          "sandbox_runner": "ready",
+          "multimodal_capabilities": {
+            "pdf_native_text": "AVAILABLE",
+            "pdf_ocr": "AVAILABLE",
+            "image_ocr": "AVAILABLE",
+            "image_semantic_vision": "UNAVAILABLE",
+            "audio_transcription": "UNAVAILABLE",
+            "audio_timestamps": "UNAVAILABLE",
+            "audio_diarization": "NOT_SUPPORTED"
+          }
+        }
+      },
+      "error": null,
+      "meta": {
+        "timestamp": "2026-09-11T16:23:43.521442Z",
+        "request_id": null
+      }
+    }
+  },
+  "runner_down": {
+    "health": 200,
+    "readiness": 503,
+    "sandbox": {
+      "success": false,
+      "code": "SANDBOX_INFRASTRUCTURE_ERROR"
+    }
+  }
+}

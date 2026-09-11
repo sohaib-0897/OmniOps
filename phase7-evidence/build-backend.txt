@@ -1,0 +1,71 @@
+
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.backend
+#1 transferring dockerfile:
+#1 transferring dockerfile: 1.19kB 0.0s done
+#1 DONE 0.2s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 ...
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 4.1s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 272B 0.1s done
+#4 DONE 0.2s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [build 1/5] FROM docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+#6 resolve docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea 0.1s done
+#6 DONE 0.1s
+
+#5 [internal] load build context
+#5 transferring context: 1.13MB 1.5s done
+#5 DONE 1.6s
+
+#7 [build 5/5] RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir --upgrade pip && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+#7 CACHED
+
+#8 [runtime 2/6] RUN apt-get update && apt-get install -y --no-install-recommends curl tesseract-ocr && rm -rf /var/lib/apt/lists/* && addgroup --system --gid 10001 omniops && adduser --system --uid 10001 --ingroup omniops --home /app omniops
+#8 CACHED
+
+#9 [build 3/5] RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [runtime 3/6] COPY --from=build /opt/venv /opt/venv
+#10 CACHED
+
+#11 [build 2/5] WORKDIR /build
+#11 CACHED
+
+#12 [build 4/5] COPY backend/requirements.txt .
+#12 CACHED
+
+#13 [runtime 4/6] WORKDIR /app
+#13 CACHED
+
+#14 [runtime 5/6] COPY --chown=omniops:omniops backend/ .
+#14 DONE 0.4s
+
+#15 [runtime 6/6] RUN mkdir -p /app/storage/uploads /app/storage/parquet /app/storage/temp && chown -R omniops:omniops /app/storage
+#15 DONE 1.4s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 0.5s done
+#16 exporting manifest sha256:47ea0ac583bf2fe11a738e3765474ded41e599acdade0deb5a00fe3d27b29ab5 0.1s done
+#16 exporting config sha256:743a734247e162ae172594248cf9c504407fc774d8b1743e00c40efc8425c62d 0.1s done
+#16 exporting attestation manifest sha256:71181893a28cd7b2aa91cc1bc4643c0acc368cebe92da7c41102c4372a18697c 0.1s done
+#16 exporting manifest list sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71
+#16 exporting manifest list sha256:b999cbdd1b2fad28a0b9bb7ef3cb245a132c1448cee16b7b5112b4de45434e71 0.1s done
+#16 naming to docker.io/library/omniops-backend:phase7 done
+#16 unpacking to docker.io/library/omniops-backend:phase7
+#16 unpacking to docker.io/library/omniops-backend:phase7 0.2s done
+#16 DONE 1.1s
