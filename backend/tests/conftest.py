@@ -4,10 +4,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Add backend directory to sys.path
+# Add backend directory and repository root to sys.path
 backend_dir = str(Path(__file__).resolve().parent.parent)
+root_dir = str(Path(__file__).resolve().parent.parent.parent)
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 import pytest
 import pytest_asyncio

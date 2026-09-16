@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+_root_dir = str(Path(__file__).resolve().parent.parent.parent)
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
+
 from evals.retrieval_metrics import precision_at_k, recall_at_k, reciprocal_rank, ndcg_at_k
 
 
