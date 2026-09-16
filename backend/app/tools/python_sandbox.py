@@ -190,11 +190,13 @@ class ContainerSandboxRunner:
             "--security-opt", "no-new-privileges:true",
             "--pids-limit", str(max(1, settings.SANDBOX_MAX_PIDS)),
             "--memory", f"{max(64, settings.SANDBOX_MAX_MEMORY_MB)}m",
+            "--memory-swap", f"{max(64, settings.SANDBOX_MAX_MEMORY_MB)}m",
             "--cpus", str(max(0.1, settings.SANDBOX_CPU_LIMIT)), "--user", "65532:65532",
             "--workdir", "/sandbox",
             "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
             "--env", "PATH=/usr/local/bin:/usr/bin:/bin",
             "--env", "PYTHONUNBUFFERED=1",
+            "--env", f"SANDBOX_MEMORY_LIMIT_MB={max(64, settings.SANDBOX_MAX_MEMORY_MB)}",
             settings.SANDBOX_IMAGE,
         ]
         proc: Optional[subprocess.Popen] = None

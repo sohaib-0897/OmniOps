@@ -62,7 +62,7 @@ def _execute(request: ExecuteRequest) -> dict[str, Any]:
                 # The image entrypoint is the trusted runner; only its payload
                 # argument is supplied by this API.
                 "Cmd": ["--payload", payload],
-                "Env": ["PATH=/usr/local/bin:/usr/bin:/bin", "PYTHONUNBUFFERED=1"],
+                "Env": ["PATH=/usr/local/bin:/usr/bin:/bin", "PYTHONUNBUFFERED=1", f"SANDBOX_MEMORY_LIMIT_MB={RunnerSettings.memory_mb}"],
                 "User": "65532:65532",
                 "WorkingDir": "/sandbox",
                 "Tty": True,
@@ -70,6 +70,7 @@ def _execute(request: ExecuteRequest) -> dict[str, Any]:
                     "NetworkMode": "none", "ReadonlyRootfs": True,
                     "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges:true"],
                     "PidsLimit": RunnerSettings.pids, "Memory": RunnerSettings.memory_mb * 1024 * 1024,
+                    "MemorySwap": RunnerSettings.memory_mb * 1024 * 1024,
                     "NanoCpus": int(RunnerSettings.cpu_limit * 1_000_000_000), "Tmpfs": {"/tmp": "rw,noexec,nosuid,nodev,size=64m"},
                     "AutoRemove": False,
                 },

@@ -6,6 +6,8 @@ import contextlib
 import base64
 import io
 import json
+import os
+import resource
 import sys
 import traceback
 
@@ -36,6 +38,8 @@ def main() -> int:
             request = json.load(sys.stdin)
         code = request["code"]
         input_data = request.get("input_data") or {}
+        memory_limit = int(os.environ["SANDBOX_MEMORY_LIMIT_MB"]) * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
         stdout = LimitedTextIO(64 * 1024)
         stderr = LimitedTextIO(64 * 1024)
 
