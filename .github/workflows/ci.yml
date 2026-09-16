@@ -20,6 +20,10 @@ jobs:
         working-directory: backend
       - run: alembic -c alembic.ini upgrade head
         working-directory: backend
+      - name: Build sandbox test image
+        run: |
+          docker build -f docker/Dockerfile.backend -t omniops-backend:ci .
+          docker build --build-arg BACKEND_IMAGE=omniops-backend:ci -f docker/Dockerfile.sandbox -t omniops-python-sandbox:2026.09.05 .
       - run: python -m pytest tests -q --disable-warnings
         working-directory: backend
       - run: python -m pytest tests/test_postgres_hybrid_retrieval.py -q --disable-warnings

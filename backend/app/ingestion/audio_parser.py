@@ -119,7 +119,7 @@ async def transcribe_audio_recording(file_path: str) -> Dict[str, Any]:
     # Gemini's dedicated transcription model is the preferred provider when
     # configured. OpenAI Whisper remains a genuine secondary provider, never a
     # fabricated fallback and never selected after a Gemini provider failure.
-    provider = configured_gemini_multimodal() if settings.GEMINI_API_KEY else None
+    provider = configured_gemini_multimodal()
     if provider is None and settings.OPENAI_API_KEY:
         return await asyncio.to_thread(_openai_transcription, file_path)
     if provider is None:
