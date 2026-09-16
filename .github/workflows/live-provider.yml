@@ -7,10 +7,10 @@ jobs:
   provider-smoke:
     runs-on: ubuntu-latest
     environment: live-provider
-    env: { GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}", ENVIRONMENT: test }
+    env: { GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}", ENVIRONMENT: test, PYTHONPATH: backend }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install -r backend/requirements.txt
       - run: python -m pytest backend/tests/test_phase5_gemini_provider_contract.py -q
