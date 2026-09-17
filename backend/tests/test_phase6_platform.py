@@ -76,6 +76,22 @@ def test_production_rejects_insecure_cookie(monkeypatch):
     monkeypatch.setattr(settings, "COOKIE_SECURE", False)
     with pytest.raises(ValueError, match="COOKIE_SECURE"): settings.validate_production_configuration()
 
+
+def test_explicit_http_deployment_requires_http_origin_and_insecure_cookie(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "SECRET_KEY", "s" * 40)
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql+asyncpg://db/app")
+    monkeypatch.setattr(settings, "SANDBOX_EXECUTION_MODE", "remote")
+    monkeypatch.setattr(settings, "SANDBOX_RUNNER_URL", "http://sandbox-runner:9100")
+    monkeypatch.setattr(settings, "SANDBOX_RUNNER_TOKEN", "r" * 32)
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_HTTP", True)
+    monkeypatch.setattr(settings, "COOKIE_SECURE", False)
+    monkeypatch.setattr(settings, "CORS_ORIGINS", ["http://203.0.113.10"])
+    settings.validate_production_configuration()
+    monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://example.com"])
+    with pytest.raises(ValueError, match="HTTP origins"):
+        settings.validate_production_configuration()
+
 def test_sse_route_has_no_query_token_contract():
     import inspect
     from app.api.v1.investigations import stream_investigation_events

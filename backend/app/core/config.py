@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     REFRESH_COOKIE_NAME: str = "omniops_refresh"
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
+    # Explicit exception for an initial single-VM deployment by public IPv4.
+    ALLOW_INSECURE_HTTP: bool = False
     
     # Storage Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
@@ -169,10 +171,16 @@ class Settings(BaseSettings):
             raise ValueError("Production requires a PostgreSQL DATABASE_URL.")
         if not self.CORS_ORIGINS or "*" in self.CORS_ORIGINS:
             raise ValueError("Production CORS_ORIGINS must be explicit and non-empty.")
-        if any(not origin.startswith("https://") for origin in self.CORS_ORIGINS):
-            raise ValueError("Production CORS_ORIGINS must use HTTPS.")
-        if not self.COOKIE_SECURE:
-            raise ValueError("Production refresh cookies require COOKIE_SECURE=true.")
+        if self.ALLOW_INSECURE_HTTP:
+            if any(not origin.startswith("http://") for origin in self.CORS_ORIGINS):
+                raise ValueError("HTTP deployment CORS_ORIGINS must use explicit HTTP origins.")
+            if self.COOKIE_SECURE:
+                raise ValueError("HTTP deployment requires COOKIE_SECURE=false.")
+        else:
+            if any(not origin.startswith("https://") for origin in self.CORS_ORIGINS):
+                raise ValueError("Production CORS_ORIGINS must use HTTPS.")
+            if not self.COOKIE_SECURE:
+                raise ValueError("Production refresh cookies require COOKIE_SECURE=true.")
         if self.COOKIE_SAMESITE.lower() not in {"strict", "lax"}:
             raise ValueError("Production COOKIE_SAMESITE must be strict or lax.")
         if self.SANDBOX_EXECUTION_MODE != "remote" or not self.SANDBOX_RUNNER_URL or not self.SANDBOX_RUNNER_TOKEN:

@@ -1,5 +1,5 @@
-// The standalone dev server has no API reverse proxy; production supplies the
-// public API origin explicitly through NEXT_PUBLIC_API_URL.
+// The standalone dev server has no API reverse proxy; production uses Caddy
+// and the same-origin /api/v1 path.
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development"

@@ -1,0 +1,141 @@
+name: omniops-ubuntu
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: omniops
+      POSTGRES_DB: omniops_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omniops -d omniops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [data]
+
+  migrate:
+    image: omniops-backend:ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment: &app_environment
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+      ENVIRONMENT: production
+      DEBUG: "false"
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-true}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: lax
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      SANDBOX_EXECUTION_MODE: remote
+      SANDBOX_RUNNER_URL: http://sandbox-runner:9100
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set SANDBOX_RUNNER_TOKEN}
+      SANDBOX_IMAGE: omniops-python-sandbox:ubuntu
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [data]
+
+  backend:
+    image: omniops-backend:ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=256m"]
+    volumes: ["app_storage:/app/storage"]
+    environment: *app_environment
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      sandbox-runner: { condition: service_healthy }
+    networks: [web, data, runner]
+
+  worker:
+    image: omniops-backend:ubuntu
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; assert b'app.worker' in Path('/proc/1/cmdline').read_bytes()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=256m"]
+    volumes: ["app_storage:/app/storage"]
+    environment: *app_environment
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      sandbox-runner: { condition: service_healthy }
+    networks: [data, runner]
+
+  frontend:
+    image: omniops-frontend:ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [web]
+
+  sandbox-image:
+    image: omniops-python-sandbox:ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sandbox
+      args: { BACKEND_IMAGE: omniops-backend:ubuntu }
+    entrypoint: ["/bin/true"]
+    command: []
+    restart: "no"
+    networks: [runner]
+
+  sandbox-runner:
+    image: omniops-sandbox-runner:ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.sandbox-runner
+      args: { BACKEND_IMAGE: omniops-backend:ubuntu }
+    restart: unless-stopped
+    environment:
+      SANDBOX_IMAGE: omniops-python-sandbox:ubuntu
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set SANDBOX_RUNNER_TOKEN}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    depends_on:
+      sandbox-image: { condition: service_completed_successfully }
+    networks: [runner]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80"]
+    volumes:
+      - ./docker/Caddyfile.ubuntu:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend: { condition: service_healthy }
+    networks: [web]
+
+networks:
+  web:
+  data:
+    internal: true
+  runner:
+    internal: true
+volumes:
+  postgres_data:
+  app_storage:
+  caddy_data:
+  caddy_config:
