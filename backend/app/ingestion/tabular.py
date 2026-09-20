@@ -62,47 +62,41 @@ def process_tabular_file(
     path = Path(file_path)
     ext = path.suffix.lower()
     results = []
+    written_paths: List[Path] = []
     
     workspace_parquet_dir = settings.PARQUET_DIR / str(workspace_id)
     workspace_parquet_dir.mkdir(parents=True, exist_ok=True)
     
-    if ext in [".csv", ".tsv", ".txt"]:
-        sep = "\t" if ext == ".tsv" else ","
+    # The content-addressed upload prefix makes replacement paths unique.
+    # A failed transaction can therefore remove its new parquet without
+    # damaging the previously committed dataset with the same logical name.
+    source_identity = path.name.split("_", 1)[0]
+
+    def write_parquet(df: pd.DataFrame, table_name: str) -> Path:
+        parquet_path = workspace_parquet_dir / f"{table_name}_{source_identity}.parquet"
+        temporary = parquet_path.with_name(f".{parquet_path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            df = pd.read_csv(file_path, sep=sep, low_memory=False, encoding_errors="replace")
-        except Exception:
-            df = pd.read_csv(file_path, sep=None, engine="python", encoding_errors="replace")
+            df.to_parquet(str(temporary), index=False, engine="pyarrow")
+            temporary.replace(parquet_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        written_paths.append(parquet_path)
+        return parquet_path
+
+    try:
+        if ext in [".csv", ".tsv", ".txt"]:
+            sep = "\t" if ext == ".tsv" else ","
+            try:
+                df = pd.read_csv(file_path, sep=sep, low_memory=False, encoding_errors="replace")
+            except Exception:
+                df = pd.read_csv(file_path, sep=None, engine="python", encoding_errors="replace")
             
-        # Clean column names
-        df.columns = [re.sub(r"[^a-zA-Z0-9_]", "_", str(c)).strip("_") for c in df.columns]
-        table_name = clean_table_name(original_filename)
-        parquet_path = workspace_parquet_dir / f"{table_name}.parquet"
-        
-        df.to_parquet(str(parquet_path), index=False, engine="pyarrow")
-        schema_def = profile_dataframe(df)
-        
-        results.append({
-            "table_name": table_name,
-            "row_count": len(df),
-            "column_count": len(df.columns),
-            "schema_definition": schema_def,
-            "parquet_storage_path": str(parquet_path),
-        })
-        
-    elif ext in [".xlsx", ".xls"]:
-        excel_file = pd.ExcelFile(file_path)
-        for sheet_name in excel_file.sheet_names:
-            df = pd.read_excel(excel_file, sheet_name=sheet_name)
-            if df.empty:
-                continue
-                
+            # Clean column names
             df.columns = [re.sub(r"[^a-zA-Z0-9_]", "_", str(c)).strip("_") for c in df.columns]
-            table_name = clean_table_name(original_filename, sheet_name if len(excel_file.sheet_names) > 1 else "")
-            parquet_path = workspace_parquet_dir / f"{table_name}.parquet"
-            
-            df.to_parquet(str(parquet_path), index=False, engine="pyarrow")
+            table_name = clean_table_name(original_filename)
+            parquet_path = write_parquet(df, table_name)
             schema_def = profile_dataframe(df)
-            
+
             results.append({
                 "table_name": table_name,
                 "row_count": len(df),
@@ -110,5 +104,29 @@ def process_tabular_file(
                 "schema_definition": schema_def,
                 "parquet_storage_path": str(parquet_path),
             })
-            
-    return results
+
+        elif ext in [".xlsx", ".xls"]:
+            excel_file = pd.ExcelFile(file_path)
+            for sheet_name in excel_file.sheet_names:
+                df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                if df.empty:
+                    continue
+
+                df.columns = [re.sub(r"[^a-zA-Z0-9_]", "_", str(c)).strip("_") for c in df.columns]
+                table_name = clean_table_name(original_filename, sheet_name if len(excel_file.sheet_names) > 1 else "")
+                parquet_path = write_parquet(df, table_name)
+                schema_def = profile_dataframe(df)
+
+                results.append({
+                    "table_name": table_name,
+                    "row_count": len(df),
+                    "column_count": len(df.columns),
+                    "schema_definition": schema_def,
+                    "parquet_storage_path": str(parquet_path),
+                })
+
+        return results
+    except Exception:
+        for written_path in written_paths:
+            written_path.unlink(missing_ok=True)
+        raise

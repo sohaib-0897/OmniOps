@@ -40,7 +40,8 @@ app = FastAPI(title="OmniOps Sandbox Runner", docs_url=None, redoc_url=None)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health(authorization: Optional[str] = Header(default=None)) -> dict[str, str]:
+    _authorize(authorization)
     return {"status": "ok"}
 
 

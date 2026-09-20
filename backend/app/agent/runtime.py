@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, select
+from sqlalchemy import update, select, func
 
 from app.models.investigation import (
     AgentObservation, AgentPlan, AgentPlanStep, AgentToolAttempt, AgentTransition, InvestigationSession, RuntimeState,
@@ -43,6 +43,10 @@ class RuntimeErrorCode(str, Enum):
 
 class SimulatedWorkerCrash(BaseException):
     """Deterministic test seam for a worker dying before result commit."""
+
+
+class WorkerLeaseLost(RuntimeError):
+    """Raised before a stale worker can mutate authoritative state."""
 
 
 class PlanStepSpec(BaseModel):
@@ -286,11 +290,19 @@ async def acquire_lease(session: AsyncSession, investigation: InvestigationSessi
 
 
 async def release_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str) -> None:
-    if investigation.worker_id == worker_id:
-        investigation.worker_id = None
-        investigation.lease_acquired_at = None
-        investigation.lease_expires_at = None
-        await session.flush()
+    result = await session.execute(
+        update(InvestigationSession)
+        .where(
+            InvestigationSession.id == investigation.id,
+            InvestigationSession.worker_id == worker_id,
+        )
+        .values(worker_id=None, lease_acquired_at=None, lease_expires_at=None)
+    )
+    if result.rowcount:
+        from sqlalchemy.orm.attributes import set_committed_value
+        set_committed_value(investigation, "worker_id", None)
+        set_committed_value(investigation, "lease_acquired_at", None)
+        set_committed_value(investigation, "lease_expires_at", None)
 
 
 async def renew_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = 120) -> bool:
@@ -319,7 +331,16 @@ async def claim_next_investigation(session: AsyncSession, worker_id: str, ttl_se
     now = datetime.now(timezone.utc)
     from datetime import timedelta
     candidate = (await session.execute(select(InvestigationSession).where(
-        InvestigationSession.current_state.in_([RuntimeState.READY.value, RuntimeState.EXECUTING.value, RuntimeState.REPLANNING.value]),
+        InvestigationSession.current_state.in_([
+            RuntimeState.CREATED.value,
+            RuntimeState.PLANNING.value,
+            RuntimeState.READY.value,
+            RuntimeState.EXECUTING.value,
+            RuntimeState.OBSERVING.value,
+            RuntimeState.VERIFYING.value,
+            RuntimeState.REPLANNING.value,
+            RuntimeState.SYNTHESIZING.value,
+        ]),
         InvestigationSession.cancellation_requested.is_(False),
         ((InvestigationSession.worker_id.is_(None)) | (InvestigationSession.lease_expires_at < now)),
     ).with_for_update(skip_locked=True).limit(1))).scalar_one_or_none()
@@ -330,6 +351,36 @@ async def claim_next_investigation(session: AsyncSession, worker_id: str, ttl_se
     candidate.lease_expires_at = now + timedelta(seconds=ttl_seconds)
     await session.flush()
     return candidate
+
+
+async def prepare_claimed_investigation_for_recovery(
+    session: AsyncSession,
+    investigation: InvestigationSession,
+) -> None:
+    """Move an interrupted, newly claimed run back to a safe replay boundary."""
+    current = RuntimeState(investigation.current_state)
+    await session.execute(
+        update(AgentToolAttempt)
+        .where(
+            AgentToolAttempt.step_id.in_(
+                select(AgentPlanStep.id)
+                .join(AgentPlan, AgentPlanStep.plan_id == AgentPlan.id)
+                .where(AgentPlan.investigation_id == investigation.id)
+            ),
+            AgentToolAttempt.status == "RUNNING",
+        )
+        .values(
+            status="ORPHANED",
+            error_classification="WORKER_INTERRUPTED",
+            retryable=True,
+            completed_at=datetime.now(timezone.utc),
+        )
+    )
+    if current in {RuntimeState.CREATED, RuntimeState.READY, RuntimeState.SYNTHESIZING}:
+        return
+    if current in {RuntimeState.OBSERVING, RuntimeState.VERIFYING}:
+        await transition(session, investigation, RuntimeState.REPLANNING, "worker_recovery")
+    await transition(session, investigation, RuntimeState.READY, "worker_recovery")
 
 
 def logical_identity(*parts: Any) -> str:
@@ -358,6 +409,41 @@ async def persist_runtime_event(session: AsyncSession, investigation_id: UUID, e
     await session.flush()
     session.info.setdefault("pending_runtime_events", {})[str(event.id)] = event
     return event
+
+
+async def materialize_runtime_event_sequences(session: AsyncSession, investigation_id: UUID) -> None:
+    """Assign replay order only after events are visible to a reader.
+
+    Insert timestamps and database sequences can both be allocated before a
+    transaction commits. Assigning delivery order to committed, visible rows
+    prevents a later commit from falling behind an already-issued SSE cursor.
+    """
+    if session.get_bind().dialect.name == "postgresql":
+        await session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(f"runtime-delivery:{investigation_id}")))
+        )
+    next_sequence = (
+        await session.execute(
+            select(func.coalesce(func.max(RuntimeEvent.delivery_sequence), 0)).where(
+                RuntimeEvent.investigation_id == investigation_id
+            )
+        )
+    ).scalar_one()
+    pending = (
+        await session.execute(
+            select(RuntimeEvent)
+            .where(
+                RuntimeEvent.investigation_id == investigation_id,
+                RuntimeEvent.delivery_sequence.is_(None),
+            )
+            .order_by(RuntimeEvent.created_at.asc(), RuntimeEvent.id.asc())
+            .with_for_update()
+        )
+    ).scalars().all()
+    for event in pending:
+        next_sequence += 1
+        event.delivery_sequence = next_sequence
+    await session.flush()
 
 
 async def publish_persisted_runtime_events(session: AsyncSession) -> None:
@@ -408,10 +494,7 @@ async def resume_investigation(session: AsyncSession, investigation_id: UUID, wo
         return investigation
     if not await acquire_lease(session, investigation, worker_id, ttl_seconds):
         raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
-    # Running attempts are uncertain after a crash; never mark them successful.
-    orphan_result = await session.execute(update(AgentToolAttempt).where(AgentToolAttempt.step_id.in_(select(AgentPlanStep.id).join(AgentPlan, AgentPlanStep.plan_id == AgentPlan.id).where(AgentPlan.investigation_id == investigation_id)), AgentToolAttempt.status == "RUNNING").values(status="ORPHANED", error_classification="WORKER_INTERRUPTED", retryable=True, completed_at=datetime.now(timezone.utc)))
-    if orphan_result.rowcount and RuntimeState(investigation.current_state) == RuntimeState.EXECUTING:
-        await transition(session, investigation, RuntimeState.READY, "worker_recovery")
+    await prepare_claimed_investigation_for_recovery(session, investigation)
     await session.commit()
     return investigation
 
@@ -484,6 +567,9 @@ class DurablePlanExecutor:
         calls = 0
         started = datetime.now(timezone.utc)
         while len([v for v in statuses.values() if v in {"COMPLETED", "FAILED"}]) < len(statuses):
+            worker_id = context.get("worker_id") if isinstance(context, dict) else None
+            if worker_id and not await owns_lease(self.db, investigation.id, worker_id):
+                raise WorkerLeaseLost(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
             if investigation.cancellation_requested:
                 await transition(self.db, investigation, RuntimeState.CANCELLED, RuntimeErrorCode.CANCELLED.value)
                 await self.db.commit()
@@ -517,7 +603,11 @@ class DurablePlanExecutor:
                 calls += 1
         await transition(self.db, investigation, RuntimeState.VERIFYING, "all_steps_complete")
         await transition(self.db, investigation, RuntimeState.SYNTHESIZING, "verified_outputs")
-        await transition(self.db, investigation, RuntimeState.COMPLETED, "runtime_complete")
+        worker_id = context.get("worker_id") if isinstance(context, dict) else None
+        if worker_id and not await owns_lease(self.db, investigation.id, worker_id):
+            raise WorkerLeaseLost(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
+        if not (isinstance(context, dict) and context.get("defer_synthesis")):
+            await transition(self.db, investigation, RuntimeState.COMPLETED, "runtime_complete")
         await self.db.commit()
         return {"status": "completed", "outputs": outputs}
 
@@ -537,7 +627,7 @@ class DurablePlanExecutor:
                     attempt.error_classification = "WORKER_LEASE_LOST"
                     attempt.completed_at = datetime.now(timezone.utc)
                     await self.db.flush()
-                    return ObservationDecision.FAIL
+                    raise WorkerLeaseLost(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
                 await persist_runtime_event(self.db, investigation.id, "tool.started", logical_identity(investigation.id, db_step.id, "tool.started", attempt_no), {"tool": definition.name, "attempt": attempt_no}, attempt.id)
                 result = await self.registry.invoke(definition.name, spec.inputs, context)
                 # Fence the completion boundary as well as the start. A lease
@@ -549,7 +639,7 @@ class DurablePlanExecutor:
                     attempt.completed_at = datetime.now(timezone.utc)
                     attempt.retryable = True
                     await self.db.flush()
-                    return ObservationDecision.FAIL
+                    raise WorkerLeaseLost(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
                 # Promote only explicitly structured, lineage-bearing outputs;
                 # arbitrary tool text never becomes evidence or a claim.
                 from app.agent.persistence import persist_tool_domain_outputs
@@ -573,6 +663,8 @@ class DurablePlanExecutor:
                 # Preserve the RUNNING attempt exactly as an uncertain
                 # external execution; the recovery worker will classify it as
                 # ORPHANED and apply the normal safe retry policy.
+                raise
+            except WorkerLeaseLost:
                 raise
             except BaseException as exc:
                 last_error = exc

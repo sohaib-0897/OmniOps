@@ -1,4 +1,5 @@
 import uuid
+import logging
 from typing import List
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
@@ -23,6 +24,16 @@ from app.ingestion.contracts import ExtractionStatus, stable_extraction_id
 from app.rag.embeddings import EmbeddingProvider, EmbeddingState
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/files", tags=["Files & Ingestion"])
+logger = logging.getLogger(__name__)
+
+
+def _managed_storage_path(raw_path: str) -> Path:
+    """Resolve only application-owned upload/parquet paths for mutation."""
+    candidate = Path(raw_path).resolve(strict=False)
+    roots = [settings.UPLOAD_DIR.resolve(strict=False), settings.PARQUET_DIR.resolve(strict=False)]
+    if not any(candidate.is_relative_to(root) for root in roots):
+        raise ValueError("Storage path is outside managed application storage.")
+    return candidate
 
 
 async def _embedding_fields(content: str, db: AsyncSession) -> dict:
@@ -73,6 +84,10 @@ async def upload_file(
 ):
     """Upload and process multimodal document into the workspace."""
     await enforce_rate_limit(db, key=f"upload:workspace:{workspace_id}", limit=settings.RATE_LIMIT_UPLOAD_PER_HOUR, window_seconds=3600)
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(f"workspace-storage:{workspace_id}")))
+        )
     used = (await db.execute(select(func.coalesce(func.sum(SourceDocument.byte_size), 0)).where(SourceDocument.workspace_id == workspace_id))).scalar_one()
     if used >= settings.MAX_WORKSPACE_STORAGE_BYTES:
         raise HTTPException(status_code=413, detail="Workspace storage quota has been reached.")
@@ -94,6 +109,8 @@ async def upload_file(
     )).scalar_one_or_none()
 
     if existing_doc:
+        if Path(storage_path).resolve(strict=False) != Path(existing_doc.storage_path).resolve(strict=False):
+            _managed_storage_path(storage_path).unlink(missing_ok=True)
         return ResponseEnvelope.ok(DocumentResponse.model_validate(existing_doc))
 
     # Create SourceDocument record
@@ -108,13 +125,15 @@ async def upload_file(
         processing_status=ProcessingStatus.PROCESSING.value
     )
     db.add(doc)
-    await db.flush()
-
+    created_paths = {_managed_storage_path(storage_path)}
+    superseded_paths: set[Path] = set()
     try:
+        await db.flush()
         # 2. Ingestion Dispatch
         if modality == "spreadsheet":
             datasets_meta = process_tabular_file(storage_path, workspace_id, clean_name)
             for d_meta in datasets_meta:
+                created_paths.add(_managed_storage_path(d_meta["parquet_storage_path"]))
                 existing_dataset = (await db.execute(
                     select(TabularDataset).where(
                         TabularDataset.workspace_id == workspace_id,
@@ -123,6 +142,9 @@ async def upload_file(
                 )).scalar_one_or_none()
 
                 if existing_dataset:
+                    old_parquet_path = _managed_storage_path(existing_dataset.parquet_storage_path)
+                    if old_parquet_path != _managed_storage_path(d_meta["parquet_storage_path"]):
+                        superseded_paths.add(old_parquet_path)
                     existing_dataset.source_id = doc.id
                     existing_dataset.row_count = d_meta["row_count"]
                     existing_dataset.column_count = d_meta["column_count"]
@@ -249,15 +271,23 @@ async def upload_file(
         } else ProcessingStatus.READY.value
         await db.commit()
         await db.refresh(doc)
+        for path in superseded_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Committed dataset replacement left a superseded parquet file.")
         return ResponseEnvelope.ok(DocumentResponse.model_validate(doc))
 
-    except Exception as e:
-        doc.processing_status = ProcessingStatus.FAILED.value
-        doc.error_message = str(e)
-        await db.commit()
+    except Exception:
+        await db.rollback()
+        for path in created_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Failed to clean staged upload path after transaction rollback.")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Failed to process {modality} document: {str(e)}"
+            detail=f"Failed to process {modality} document. No source was committed."
         )
 
 @router.get("", response_model=ResponseEnvelope[List[DocumentResponse]])
@@ -320,7 +350,7 @@ async def delete_file(
             detail="Document not found in workspace."
         )
 
-    # Query and delete physical parquet files associated with this document
+    # Query physical paths before deleting their database ownership records.
     tabular_datasets = (await db.execute(
         select(TabularDataset).where(
             TabularDataset.workspace_id == workspace_id,
@@ -328,19 +358,35 @@ async def delete_file(
         )
     )).scalars().all()
 
-    for ds in tabular_datasets:
-        if ds.parquet_storage_path:
-            try:
-                Path(ds.parquet_storage_path).unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    # Delete primary physical file
+    paths = [*(ds.parquet_storage_path for ds in tabular_datasets if ds.parquet_storage_path)]
+    if not doc.storage_path.startswith("web:"):
+        paths.insert(0, doc.storage_path)
+    staged: list[tuple[Path, Path]] = []
     try:
-        Path(doc.storage_path).unlink(missing_ok=True)
-    except Exception:
-        pass
+        for raw_path in paths:
+            if not Path(raw_path).resolve(strict=False).exists():
+                continue
+            original = _managed_storage_path(raw_path)
+            trash = original.parent / ".omniops-trash" / f"{uuid.uuid4().hex}_{original.name}"
+            trash.parent.mkdir(parents=True, exist_ok=True)
+            original.replace(trash)
+            staged.append((original, trash))
 
-    await db.delete(doc)
-    await db.commit()
+        from app.agent.persistence import invalidate_source_dependents
+        await invalidate_source_dependents(db, source_id=doc.id)
+        await db.delete(doc)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        for original, trash in reversed(staged):
+            if trash.exists() and not original.exists():
+                original.parent.mkdir(parents=True, exist_ok=True)
+                trash.replace(original)
+        raise HTTPException(status_code=409, detail="Document deletion could not be committed; stored files were preserved.")
+
+    for _, trash in staged:
+        try:
+            trash.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Committed document deletion left a quarantined file for reconciliation.")
     return ResponseEnvelope.ok({"deleted": True, "file_id": str(file_id)})

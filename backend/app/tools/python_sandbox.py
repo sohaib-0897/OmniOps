@@ -10,7 +10,6 @@ runner is unavailable; it never falls back to host Python execution.
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import os
 import shutil
@@ -24,6 +23,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.evidence.calculation_identity import calculation_reproducibility_hash
 
 
 SAFE_MODULES: Set[str] = {
@@ -123,6 +123,11 @@ def validate_python_code(code: str) -> None:
 
 def _runner_request(code: str, input_data: Optional[Dict[str, Any]]) -> bytes:
     return json.dumps({"code": code, "input_data": input_data or {}}, separators=(",", ":"), default=str).encode("utf-8")
+
+
+def _reproducibility_hash(code: str, input_data: Optional[Dict[str, Any]], output: Any) -> str:
+    """Return the stable calculation identity shared by local and remote runners."""
+    return calculation_reproducibility_hash(code, input_data, output)
 
 
 def _bounded_reader(stream, limit: int, output: bytearray, overflow: threading.Event) -> None:
@@ -235,7 +240,7 @@ class ContainerSandboxRunner:
             user_stdout = str(payload.get("stdout") or "")[: settings.SANDBOX_MAX_STDOUT_BYTES]
             user_stderr = str(payload.get("stderr") or "")[: settings.SANDBOX_MAX_STDERR_BYTES]
             if payload.get("success"):
-                repro_hash = hashlib.sha256(json.dumps({"code": code.strip(), "input": input_data, "output": result_value}, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+                repro_hash = _reproducibility_hash(code, input_data, result_value)
                 return SandboxResult(execution_id=execution_id, status="success", success=True, computed_output=result_value, stdout=user_stdout, stderr=user_stderr, duration_ms=duration_ms, exit_code=proc.returncode, reproducibility_hash=repro_hash)
             return SandboxResult(execution_id=execution_id, status=payload.get("status", "user_code_failure"), success=False, stdout=user_stdout, stderr=user_stderr, duration_ms=duration_ms, exit_code=proc.returncode, error_code=payload.get("error_code", "SANDBOX_USER_CODE_ERROR"), error_message=payload.get("error") or "User code failed.", resource_limit_hit=bool(payload.get("resource_limit_hit")))
         except (OSError, subprocess.SubprocessError) as exc:
@@ -296,6 +301,10 @@ class PythonSandboxRunner:
                 error_code="SANDBOX_UNAVAILABLE",
                 error_message="No permitted sandbox execution mode is configured; execution failed closed.",
             )
+        if result.success:
+            # The external runner deliberately returns only execution output;
+            # derive identity at this stable facade boundary for both modes.
+            result.reproducibility_hash = _reproducibility_hash(code, input_data, result.computed_output)
         if not result.duration_ms:
             result.duration_ms = int((time.monotonic() - start) * 1000)
         return result

@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.evidence.validator import validate_claim_proposal, validate_supporting_claims
+from app.evidence.calculation_identity import calculation_reproducibility_hash
 from app.ingestion.audio_parser import parse_audio_recording
 from app.ingestion.vision_parser import parse_image_file
 from app.llm.base import ProviderError, ProviderState
@@ -65,7 +66,7 @@ async def test_multiple_calculations_resolve_by_exact_id(db_session: AsyncSessio
     evidence = await make_evidence(db_session, session, test_workspace)
     calculations = []
     for name, output in [("revenue", 100), ("cost", 60), ("profit", 40), ("margin", 0.4)]:
-        calculation = CalculationRecord(session_id=session.id, calculation_type="test", formula_or_code=name, input_values={"name": name}, computed_output=output, reproducibility_hash=(name * 64)[:64], evidence_ids=[str(evidence.id)])
+        calculation = CalculationRecord(session_id=session.id, calculation_type="test", formula_or_code=name, input_values={"name": name}, computed_output=output, reproducibility_hash=calculation_reproducibility_hash(name, {"name": name}, output), evidence_ids=[str(evidence.id)])
         db_session.add(calculation)
         calculations.append(calculation)
     await db_session.flush()

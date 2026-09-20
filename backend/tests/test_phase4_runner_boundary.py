@@ -88,6 +88,34 @@ def test_backend_runner_payload_has_no_runtime_controls(monkeypatch):
     assert all(field not in captured["json"] for field in {"image", "mounts", "network_mode", "privileged", "env"})
 
 
+def test_remote_success_gets_deterministic_calculation_identity(monkeypatch):
+    outputs = iter(
+        [
+            python_sandbox.SandboxResult(status="success", success=True, computed_output={"total": 3}),
+            python_sandbox.SandboxResult(status="success", success=True, computed_output={"total": 3}),
+        ]
+    )
+    monkeypatch.setattr(config.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(config.settings, "SANDBOX_EXECUTION_MODE", "remote")
+    monkeypatch.setattr(
+        python_sandbox.RemoteSandboxRunner,
+        "execute",
+        lambda *args, **kwargs: next(outputs),
+    )
+
+    first = python_sandbox.PythonSandboxRunner.execute(
+        "return INPUT_DATA['a'] + INPUT_DATA['b']",
+        {"a": 1, "b": 2},
+    )
+    second = python_sandbox.PythonSandboxRunner.execute(
+        "return INPUT_DATA['a'] + INPUT_DATA['b']",
+        {"b": 2, "a": 1},
+    )
+
+    assert first.reproducibility_hash is not None
+    assert first.reproducibility_hash == second.reproducibility_hash
+
+
 def test_production_mode_fails_closed_even_when_local_docker_exists(monkeypatch):
     monkeypatch.setattr(config.settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(config.settings, "SANDBOX_EXECUTION_MODE", "remote")

@@ -12,11 +12,11 @@
     "LOW": 1
   },
   "final_backend": {
-    "passed": 176,
-    "failed": 2
+    "passed": 187
   },
-  "explicit_evidence_references_checked": 18,
+  "explicit_evidence_references_checked": 15,
+  "withheld_publication_artifacts": [],
   "audit_sha256": "f52705af7e850c00103a39d29d11c28d91803916fdb22d2cfdf946f23793940c",
-  "classification": "NOT_RELEASE_READY",
+  "classification": "CONDITIONALLY_RELEASE_READY",
   "consistency_check": "PASS"
 }

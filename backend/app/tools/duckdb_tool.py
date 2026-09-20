@@ -1,12 +1,12 @@
 import os
 import re
 import time
-import hashlib
 import json
 import duckdb
 import pyarrow.parquet as pq
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
+from app.evidence.calculation_identity import calculation_reproducibility_hash
 
 FORBIDDEN_SQL_KEYWORDS = [
     r"\bINSTALL\b", r"\bLOAD\b", r"\bATTACH\b", r"\bDETACH\b",
@@ -75,12 +75,11 @@ class DuckDBTool:
                 dict_rows = json.loads(json.dumps(raw_dict_rows, default=str))
                 
                 # Compute deterministic reproducibility hash
-                hash_input = json.dumps(
-                    {"sql": sql_query.strip(), "rows": dict_rows[:10]}, 
-                    sort_keys=True, 
-                    default=str
+                repro_hash = calculation_reproducibility_hash(
+                    sql_query,
+                    {"max_rows": max_rows},
+                    dict_rows,
                 )
-                repro_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
                 
                 return DuckDBToolResult(
                     success=True,

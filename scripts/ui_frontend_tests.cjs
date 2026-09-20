@@ -29,6 +29,7 @@ const { MetricChartRenderer } = load(path.join(root, 'src/components/workspace/M
 const { StatusBadge } = load(path.join(root, 'src/components/ui/Primitives.tsx'));
 const { LiveActivityStepper } = load(path.join(root, 'src/components/workspace/LiveActivityStepper.tsx'));
 const { formatBytes, formatNumber, formatDuration } = load(path.join(root, 'src/lib/utils.ts'));
+const { normalizeStreamError } = load(path.join(root, 'src/hooks/useInvestigationStream.ts'));
 const claim = { claim_id: 'T1', statement: 'In 2026, the sample was 0.30000000004.', epistemic_type: 'fact', confidence_score: null, citations: [], calculation_ids: [], supporting_claims: [] };
 const report = { executive_summary: 'Test only', claims: [claim], key_findings: [], inferences: [], recommendations: [], rejected_proposals: [] };
 test('Missing verification is never rendered as verified', () => {
@@ -58,4 +59,9 @@ test('Operational trace excludes reasoning and raw tool content', () => {
 test('Numbers and missing durations are formatted without inventing measurements', () => {
   assert.equal(formatNumber(0.30000000004), '0.3'); assert.equal(formatDuration(null), 'Not recorded');
   assert.equal(formatBytes(0), '0 B'); assert.equal(formatBytes(-1), 'Unavailable');
+});
+test('SSE errors always normalize to renderable text', () => {
+  assert.equal(normalizeStreamError('provider failed'), 'provider failed');
+  assert.equal(normalizeStreamError({ message: 'structured failure' }), 'structured failure');
+  assert.equal(normalizeStreamError({ message: { nested: true } }), 'Investigation failed.');
 });

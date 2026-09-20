@@ -44,9 +44,10 @@ async def get_current_user(
     
     auth_session = (await db.execute(select(UserSession).where(UserSession.id == session_id, UserSession.user_id == user_id))).scalar_one_or_none()
     now = datetime.now(timezone.utc)
-    if auth_session:
-        expiry = auth_session.expires_at.replace(tzinfo=timezone.utc) if auth_session.expires_at.tzinfo is None else auth_session.expires_at
-    if not auth_session or auth_session.revoked_at is not None or expiry <= now:
+    if not auth_session or auth_session.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication session is revoked or expired.")
+    expiry = auth_session.expires_at.replace(tzinfo=timezone.utc) if auth_session.expires_at.tzinfo is None else auth_session.expires_at
+    if expiry <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication session is revoked or expired.")
 
     stmt = select(User).where(User.id == user_id)

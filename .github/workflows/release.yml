@@ -5,7 +5,10 @@ on:
       version: { description: "Immutable release version", required: true, type: string }
 permissions: { contents: read, packages: write }
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
   package:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -13,6 +16,10 @@ jobs:
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - run: docker build -f docker/Dockerfile.backend -t ghcr.io/${{ github.repository }}/backend:${{ github.sha }} .
       - run: docker build -f docker/Dockerfile.frontend -t ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} .
+      - run: docker build --build-arg BACKEND_IMAGE=ghcr.io/${{ github.repository }}/backend:${{ github.sha }} -f docker/Dockerfile.sandbox -t ghcr.io/${{ github.repository }}/sandbox:${{ github.sha }} .
+      - run: docker build --build-arg BACKEND_IMAGE=ghcr.io/${{ github.repository }}/backend:${{ github.sha }} -f docker/Dockerfile.sandbox-runner -t ghcr.io/${{ github.repository }}/runner:${{ github.sha }} .
       - run: docker push ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
       - run: docker push ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+      - run: docker push ghcr.io/${{ github.repository }}/sandbox:${{ github.sha }}
+      - run: docker push ghcr.io/${{ github.repository }}/runner:${{ github.sha }}
       - run: echo "Run the migration job, deploy immutable SHA images, then gate traffic on /api/v1/readiness. Deployment remains platform-specific."

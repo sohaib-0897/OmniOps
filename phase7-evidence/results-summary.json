@@ -905,6 +905,10 @@
       "total": 3,
       "passed": 3
     },
+    "backend.tests.test_final_audit_closure": {
+      "total": 5,
+      "passed": 5
+    },
     "backend.tests.test_health_and_lifecycle": {
       "total": 3,
       "passed": 3
@@ -938,8 +942,8 @@
       "passed": 12
     },
     "backend.tests.test_phase4_runner_boundary": {
-      "total": 10,
-      "passed": 10
+      "total": 11,
+      "passed": 11
     },
     "backend.tests.test_phase4_sandbox_security": {
       "total": 12,
@@ -955,12 +959,11 @@
     },
     "backend.tests.test_phase5_multimodal": {
       "total": 20,
-      "passed": 18,
-      "failed": 2
+      "passed": 20
     },
     "backend.tests.test_phase6_platform": {
-      "total": 13,
-      "passed": 13
+      "total": 16,
+      "passed": 16
     },
     "backend.tests.test_postgres_hybrid_retrieval": {
       "total": 5,

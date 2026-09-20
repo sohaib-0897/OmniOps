@@ -68,6 +68,7 @@ class InvestigationSession(Base, BaseMixin):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     current_state: Mapped[str] = mapped_column(String(30), default=RuntimeState.CREATED.value, nullable=False, index=True)
     plan_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_steps: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     failure_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

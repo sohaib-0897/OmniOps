@@ -76,7 +76,12 @@ class OmniOpsLLMClient(BaseLLMClient):
             raise ProviderError(ProviderState.TIMEOUT, "PROVIDER_TIMEOUT", f"{self.provider_name} timed out during {operation}; the investigation was stopped.") from exc
         except Exception as exc:
             self.provider_state = ProviderState.MALFORMED_RESPONSE
-            logger.error("%s provider %s failed during %s: %s", self.provider_name, self.provider_name, operation, exc)
+            logger.error(
+                "%s provider failed during %s (%s)",
+                self.provider_name,
+                operation,
+                type(exc).__name__,
+            )
             raise ProviderError(
                 ProviderState.MALFORMED_RESPONSE,
                 "SEMANTIC_PROVIDER_FAILED",

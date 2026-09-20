@@ -120,7 +120,7 @@ async def test_live_stale_worker_rejected_before_tool_and_finalization(pg_factor
     # Exercise the durable executor boundary, not only the lease helper.
     async with pg_factory() as db:
         stale = (await db.execute(select(InvestigationSession).where(InvestigationSession.id == investigation_id))).scalar_one()
-        with pytest.raises(RuntimeError, match="EVIDENCE_NOT_FOUND"):
+        with pytest.raises(RuntimeError, match="WORKER_LEASE_UNAVAILABLE"):
             await DurablePlanExecutor(db, registry, RuntimeBudget(max_attempts_per_step=1)).execute(
                 stale,
                 PlanSpec(objective="stale", steps=[PlanStepSpec(step_id="stale-step", objective="stale", tool_name="closure-tool", inputs={})]),
@@ -153,7 +153,7 @@ async def test_live_stale_worker_result_is_fenced_at_finalization(pg_factory):
         stale = (await db.execute(select(InvestigationSession).where(InvestigationSession.id == investigation_id))).scalar_one()
         assert stale.worker_id == "worker-a"
         assert await owns_lease(db, investigation_id, "worker-a") is True
-        with pytest.raises(RuntimeError, match="EVIDENCE_NOT_FOUND"):
+        with pytest.raises(RuntimeError, match="WORKER_LEASE_UNAVAILABLE"):
             await DurablePlanExecutor(db, registry, RuntimeBudget(max_attempts_per_step=1)).execute(
                 stale,
                 PlanSpec(objective="fence", steps=[PlanStepSpec(step_id="fenced-step", objective="fence", tool_name="fenced-tool", inputs={})]),

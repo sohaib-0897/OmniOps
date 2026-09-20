@@ -98,7 +98,7 @@ def query_embedding(monkeypatch):
 @pytest.mark.asyncio
 async def test_clean_postgres_database_migrated_to_phase2(pg_session):
     revision = (await pg_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert revision in {"20260905_phase3_inputs", "20260906_phase35_runtime", "20260907_phase36_idempotency", "20260910_phase38_replan", "20260911_phase6_sessions"}
+    assert revision in {"20260905_phase3_inputs", "20260906_phase35_runtime", "20260907_phase36_idempotency", "20260910_phase38_replan", "20260911_phase6_sessions", "20260912_final_audit_closure"}
     column_type = (await pg_session.execute(text("SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid WHERE c.relname = 'document_chunks' AND a.attname = 'embedding' AND NOT a.attisdropped"))).scalar_one()
     assert column_type == "vector(1536)"
 

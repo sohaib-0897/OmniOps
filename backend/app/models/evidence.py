@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from sqlalchemy import String, Text, Float, Integer, ForeignKey, JSON, DateTime, UniqueConstraint
+from sqlalchemy import String, Text, Float, Integer, BigInteger, ForeignKey, JSON, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.base import BaseMixin, GUID
@@ -150,3 +150,8 @@ class RuntimeEvent(Base, BaseMixin):
     entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), nullable=True)
     logical_identity: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    delivery_sequence: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("investigation_id", "delivery_sequence", name="uq_runtime_event_delivery_sequence"),
+    )

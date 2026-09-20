@@ -167,6 +167,78 @@ function eventData(event: MessageEvent): Record<string, any> {
   };
 }
 
+export function normalizeFinalResponse(
+  value: InvestigationSession["final_response"] | null | undefined,
+): InvestigationStreamState["finalResponse"] {
+  if (!value || typeof value !== "object") return null;
+  const report = value as InvestigationSession["final_response"];
+  return {
+    executive_summary:
+      typeof report?.executive_summary === "string"
+        ? report.executive_summary
+        : "The investigation completed without a narrative summary.",
+    key_findings: Array.isArray(report?.key_findings)
+      ? report.key_findings
+      : [],
+    claims: Array.isArray(report?.claims)
+      ? report.claims.map((claim) => ({
+          ...claim,
+          citations: Array.isArray(claim.citations) ? claim.citations : [],
+          calculation_ids: Array.isArray(claim.calculation_ids)
+            ? claim.calculation_ids
+            : [],
+          supporting_claims: Array.isArray(claim.supporting_claims)
+            ? claim.supporting_claims
+            : [],
+          verification_errors: Array.isArray(claim.verification_errors)
+            ? claim.verification_errors
+            : [],
+        }))
+      : [],
+    inferences: Array.isArray(report?.inferences) ? report.inferences : [],
+    recommendations: Array.isArray(report?.recommendations)
+      ? report.recommendations.map((item) => ({
+          ...item,
+          supported_by_claims: Array.isArray(item.supported_by_claims)
+            ? item.supported_by_claims
+            : [],
+          supporting_inference_ids: Array.isArray(
+            item.supporting_inference_ids,
+          )
+            ? item.supporting_inference_ids
+            : [],
+        }))
+      : [],
+    rejected_proposals: Array.isArray(report?.rejected_proposals)
+      ? report.rejected_proposals
+      : [],
+    missing_data_warnings: Array.isArray(report?.missing_data_warnings)
+      ? report.missing_data_warnings
+      : [],
+    contradictions: Array.isArray(report?.contradictions)
+      ? report.contradictions
+      : [],
+  };
+}
+
+export function normalizeStreamError(
+  value: unknown,
+  fallback = "Investigation failed.",
+): string {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.message === "string" && record.message.trim())
+      return record.message;
+    if (
+      typeof record.error_message === "string" &&
+      record.error_message.trim()
+    )
+      return record.error_message;
+  }
+  return fallback;
+}
+
 export function useInvestigationStream(investigationId: string | null) {
   const [state, setState] = useState<InvestigationStreamState>(initialState);
   const eventSourceRef = useRef<StreamLike | null>(null);
@@ -233,7 +305,9 @@ export function useInvestigationStream(investigationId: string | null) {
                 : session.status === "failed"
                   ? session.error_message || "Investigation failed."
                   : "Investigation cancelled.",
-            finalResponse: session.final_response || prev.finalResponse,
+            finalResponse:
+              normalizeFinalResponse(session.final_response) ||
+              prev.finalResponse,
             steps:
               session.steps && session.steps.length > 0
                 ? mergeSteps(prev.steps, session.steps)
@@ -498,9 +572,9 @@ export function useInvestigationStream(investigationId: string | null) {
         ...prev,
         status: "completed",
         activitySummary: "Investigation completed. Report synthesized.",
-        finalResponse: data as NonNullable<
-          InvestigationSession["final_response"]
-        >,
+        finalResponse: normalizeFinalResponse(
+          data as InvestigationSession["final_response"],
+        ),
       }));
       clearInterval(pollTimer);
     });
@@ -530,7 +604,9 @@ export function useInvestigationStream(investigationId: string | null) {
       setState((prev) => ({
         ...prev,
         status: "failed",
-        errorMessage: data.error || "Investigation failed.",
+        errorMessage: normalizeStreamError(
+          data.error ?? data.error_message,
+        ),
       }));
       clearInterval(pollTimer);
     });

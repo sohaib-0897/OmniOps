@@ -43,6 +43,32 @@ async def test_expired_and_malformed_access_tokens_rejected(client: AsyncClient,
     assert (await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {expired}"})).status_code == 401
     assert (await client.get("/api/v1/auth/me", headers={"Authorization": "Bearer malformed"})).status_code == 401
 
+
+@pytest.mark.asyncio
+async def test_missing_revoked_and_expired_database_sessions_rejected(client: AsyncClient, test_user, db_session: AsyncSession):
+    now = datetime.now(timezone.utc)
+    missing = create_access_token(test_user.id, uuid.uuid4())
+    assert (await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {missing}"})).status_code == 401
+
+    revoked = UserSession(user_id=test_user.id, expires_at=now + timedelta(days=1), last_used_at=now, revoked_at=now)
+    expired = UserSession(user_id=test_user.id, expires_at=now - timedelta(seconds=1), last_used_at=now)
+    db_session.add_all([revoked, expired]); await db_session.commit()
+    revoked_access = create_access_token(test_user.id, revoked.id)
+    expired_access = create_access_token(test_user.id, expired.id)
+    assert (await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {revoked_access}"})).status_code == 401
+    assert (await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {expired_access}"})).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_cookie_secret_must_match_before_session_revocation(client: AsyncClient):
+    response = await register(client, "logout-secret")
+    original = response.cookies[settings.REFRESH_COOKIE_NAME]
+    token_id, _ = original.split(".", 1)
+    client.cookies.set(settings.REFRESH_COOKIE_NAME, f"{token_id}.wrong-secret", path=f"{settings.API_V1_PREFIX}/auth")
+    assert (await client.post("/api/v1/auth/logout")).status_code == 200
+    client.cookies.set(settings.REFRESH_COOKIE_NAME, original, path=f"{settings.API_V1_PREFIX}/auth")
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 200
+
 @pytest.mark.asyncio
 async def test_login_rate_limit_and_window_state_persist(client: AsyncClient):
     for _ in range(settings.RATE_LIMIT_LOGIN_PER_5_MINUTES):
@@ -99,14 +125,14 @@ def test_sse_route_has_no_query_token_contract():
 
 
 @pytest.mark.asyncio
-async def test_sse_releases_database_before_waiting_on_client():
+async def test_sse_releases_database_before_waiting_on_client(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
     from app.api.v1.investigations import stream_investigation_events
 
     investigation_id = uuid.uuid4()
     event = SimpleNamespace(id=uuid.uuid4(), event_type="closure.probe", entity_id=None,
-                            payload={"sequence": 1}, created_at=datetime.now(timezone.utc))
+                            payload={"sequence": 1}, created_at=datetime.now(timezone.utc), delivery_sequence=1)
     investigation = MagicMock()
     investigation.scalar_one_or_none.return_value = SimpleNamespace(workspace_id=uuid.uuid4())
     membership = MagicMock()
@@ -115,6 +141,7 @@ async def test_sse_releases_database_before_waiting_on_client():
     batch.scalars.return_value.all.return_value = [event]
     db = AsyncMock()
     db.execute.side_effect = [investigation, membership, batch]
+    monkeypatch.setattr("app.api.v1.investigations.materialize_runtime_event_sequences", AsyncMock())
     request = SimpleNamespace(headers={}, is_disconnected=AsyncMock(return_value=False))
     response = await stream_investigation_events(investigation_id, request, SimpleNamespace(id=uuid.uuid4()), db)
     assert db.close.await_count == 1
@@ -142,7 +169,7 @@ async def test_broadcaster_detaches_full_queue_without_blocking_fast_client():
 
 
 @pytest.mark.asyncio
-async def test_sse_rejects_cursor_outside_authorized_investigation():
+async def test_sse_rejects_cursor_outside_authorized_investigation(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
     from fastapi import HTTPException
@@ -154,6 +181,7 @@ async def test_sse_rejects_cursor_outside_authorized_investigation():
         rows.append(result)
     db = AsyncMock()
     db.execute.side_effect = rows
+    monkeypatch.setattr("app.api.v1.investigations.materialize_runtime_event_sequences", AsyncMock())
     with pytest.raises(HTTPException) as error:
         await stream_investigation_events(uuid.uuid4(), SimpleNamespace(headers={"last-event-id": str(uuid.uuid4())}), SimpleNamespace(id=uuid.uuid4()), db)
     assert error.value.status_code == 404

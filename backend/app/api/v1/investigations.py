@@ -4,7 +4,7 @@ from typing import List, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select
 from app.models.evidence import RuntimeEvent
 
 from app.core.database import get_db, AsyncSessionLocal
@@ -20,7 +20,7 @@ from app.schemas.common import ResponseEnvelope
 from app.api.deps import get_current_user, get_workspace_membership, require_role
 from app.agent.service import run_investigation
 from app.agent.sse_manager import sse_manager
-from app.agent.runtime import resume_investigation
+from app.agent.runtime import resume_investigation, materialize_runtime_event_sequences
 from app.agent.runtime import persist_runtime_event, logical_identity, publish_persisted_runtime_events
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.config import settings
@@ -77,7 +77,8 @@ async def create_investigation(
         user_id=current_user.id,
         objective=req.objective.strip(),
         status=InvestigationStatus.PLANNING.value,
-        idempotency_key=idempotency_key
+        idempotency_key=idempotency_key,
+        max_steps=req.max_steps or 12,
     )
     db.add(session)
     # Creation and its authoritative lifecycle event commit together.  The
@@ -95,14 +96,16 @@ async def create_investigation(
     await publish_persisted_runtime_events(db)
     await db.refresh(session)
 
-    # Launch background state machine
-    background_tasks.add_task(
-        _run_agent_task,
-        session.id,
-        workspace_id,
-        req.objective.strip(),
-        req.max_steps or 12
-    )
+    # Production work is claimed only by the durable worker service. Local
+    # development/test keeps the in-process convenience runner.
+    if settings.ENVIRONMENT.lower() in {"development", "test"}:
+        background_tasks.add_task(
+            _run_agent_task,
+            session.id,
+            workspace_id,
+            req.objective.strip(),
+            req.max_steps or 12,
+        )
 
     resp = InvestigationResponse(
         id=session.id,
@@ -230,31 +233,38 @@ async def stream_investigation_events(
         )
 
     last_id = request.headers.get("last-event-id")
-    cursor_time = None
+    cursor_sequence = 0
+    previous = None
     if last_id:
         try:
             previous = (await db.execute(select(RuntimeEvent).where(RuntimeEvent.id == uuid.UUID(last_id), RuntimeEvent.investigation_id == investigation_id))).scalar_one_or_none()
             if previous is None:
                 raise HTTPException(status_code=404, detail="Event cursor not found in this investigation.")
-            cursor_time = previous.created_at
         except ValueError:
             raise HTTPException(status_code=400, detail="Malformed event cursor.")
+    await materialize_runtime_event_sequences(db, investigation_id)
+    await db.commit()
+    if previous is not None:
+        cursor_sequence = previous.delivery_sequence or 0
 
     # Authorization is complete. A long-lived stream must not retain the
     # transaction/connection used for authentication while waiting on a client.
     await db.close()
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        nonlocal cursor_time, last_id
+        nonlocal cursor_sequence, last_id
         SSE_CONNECTIONS.inc()
         try:
             yield f"event: connected\ndata: {{\"session_id\": \"{investigation_id}\"}}\n\n"
             heartbeat = 0
             while not await request.is_disconnected():
-                stmt = select(RuntimeEvent).where(RuntimeEvent.investigation_id == investigation_id)
-                if cursor_time is not None and last_id:
-                    stmt = stmt.where(or_(RuntimeEvent.created_at > cursor_time, and_(RuntimeEvent.created_at == cursor_time, RuntimeEvent.id > uuid.UUID(last_id))))
-                events = (await db.execute(stmt.order_by(RuntimeEvent.created_at.asc(), RuntimeEvent.id.asc()).limit(500))).scalars().all()
+                await materialize_runtime_event_sequences(db, investigation_id)
+                await db.commit()
+                stmt = select(RuntimeEvent).where(
+                    RuntimeEvent.investigation_id == investigation_id,
+                    RuntimeEvent.delivery_sequence > cursor_sequence,
+                )
+                events = (await db.execute(stmt.order_by(RuntimeEvent.delivery_sequence.asc()).limit(500))).scalars().all()
                 # Materialized rows remain readable after detaching. Return the
                 # connection before any network yield or polling delay; the next
                 # query starts a fresh transaction and sees newly committed rows.
@@ -263,7 +273,7 @@ async def stream_investigation_events(
                     data = {"event_id": str(event.id), "event_type": event.event_type, "entity_id": str(event.entity_id) if event.entity_id else None, "payload": event.payload or {}, "created_at": event.created_at.isoformat()}
                     import json
                     yield f"id: {event.id}\nevent: {event.event_type}\ndata: {json.dumps(data, default=str)}\n\n"
-                    cursor_time, last_id = event.created_at, str(event.id)
+                    cursor_sequence, last_id = event.delivery_sequence or cursor_sequence, str(event.id)
                 heartbeat += 1
                 if heartbeat >= 15: heartbeat = 0; yield ": heartbeat\n\n"
                 await asyncio.sleep(1)

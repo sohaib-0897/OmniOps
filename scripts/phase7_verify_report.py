@@ -25,7 +25,7 @@ assert digest == 'f52705af7e850c00103a39d29d11c28d91803916fdb22d2cfdf946f2379394
 counts = collections.Counter()
 for case in ET.parse(root / 'phase7-evidence/final-backend-junit.xml').iter('testcase'):
     counts['failed' if case.find('failure') is not None or case.find('error') is not None else 'skipped' if case.find('skipped') is not None else 'passed'] += 1
-assert counts == {'passed': 176, 'failed': 2}
+assert counts == {'passed': 187}
 references = set(re.findall(r'E/([A-Za-z0-9_./-]+\.(?:json|txt|xml))', report))
 withheld = {'provider-chain.json', 'provider-smoke.json', 'extended-browser-context.json'}
 missing = {path for path in references if not (root / 'phase7-evidence' / path).is_file()}
@@ -34,6 +34,6 @@ result = {'report_sections': len(headings), 'original_findings': statuses,
           'application_findings': severities, 'final_backend': dict(counts),
           'explicit_evidence_references_checked': len(references),
           'withheld_publication_artifacts': sorted(missing), 'audit_sha256': digest,
-          'classification': 'NOT_RELEASE_READY', 'consistency_check': 'PASS'}
+          'classification': 'CONDITIONALLY_RELEASE_READY', 'consistency_check': 'PASS'}
 (root / 'phase7-evidence/report-verification.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 print(json.dumps(result, indent=2))

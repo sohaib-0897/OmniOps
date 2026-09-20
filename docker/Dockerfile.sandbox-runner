@@ -12,5 +12,5 @@ WORKDIR /
 # host for production deployments.
 EXPOSE 9100
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health', timeout=2)"
+    CMD python -c "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:9100/health',headers={'Authorization':'Bearer '+os.environ['SANDBOX_RUNNER_TOKEN']}); urllib.request.urlopen(r,timeout=2)"
 CMD ["uvicorn", "sandbox_runner_server:app", "--host", "0.0.0.0", "--port", "9100"]

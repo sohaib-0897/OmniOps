@@ -21,7 +21,7 @@ async def request_observability(request: Request, call_next):
     except Exception:
         code = 500; logger.exception(json.dumps({"event_type": "request.failed", "request_id": request_id, "method": request.method, "path": request.url.path})); raise
     finally:
-        route = request.scope.get("route"); template = getattr(route, "path", request.url.path); elapsed = time.monotonic() - started
+        route = request.scope.get("route"); template = getattr(route, "path", None) or "__unmatched__"; elapsed = time.monotonic() - started
         with _lock: _requests[(request.method, template, code)] += 1; _latency_sum[(request.method, template)] += elapsed
     response.headers.update({"X-Request-ID": request_id, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY", "Permissions-Policy": "camera=(), microphone=(), geolocation=()", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"})
     logger.info(json.dumps({"event_type": "request.completed", "request_id": request_id, "method": request.method, "path": template, "status": code, "duration_ms": round(elapsed * 1000, 2)})); return response

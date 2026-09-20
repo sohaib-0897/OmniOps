@@ -25,7 +25,7 @@ async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)
             vector = (await db.execute(text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')"))).scalar()
             checks["pgvector"] = "ready" if vector else "unavailable"
             revision = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar_one_or_none()
-            checks["migrations"] = "ready" if revision == "20260911_phase6_sessions" else "out_of_date"
+            checks["migrations"] = "ready" if revision == "20260912_final_audit_closure" else "out_of_date"
     except Exception:
         checks["database"] = "unavailable"
     if settings.ENVIRONMENT.lower() in {"production", "prod", "staging"}:

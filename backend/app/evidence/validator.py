@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import DocumentChunk, SourceDocument
 from app.models.evidence import CalculationRecord, EvidenceItem, VerifiedClaim, InferenceRecord
 from app.models.investigation import InvestigationSession
+from app.evidence.calculation_identity import calculation_reproducibility_hash
 
 
 @dataclass
@@ -75,6 +76,12 @@ async def validate_claim_proposal(
             errors.append(f"CROSS_INVESTIGATION_CALCULATION:{raw_id}")
         if not calculation.formula_or_code or calculation.computed_output is None or not calculation.reproducibility_hash:
             errors.append(f"INCOMPLETE_CALCULATION:{raw_id}")
+        elif calculation.reproducibility_hash != calculation_reproducibility_hash(
+            calculation.formula_or_code,
+            calculation.input_values,
+            calculation.computed_output,
+        ):
+            errors.append(f"CALCULATION_REPRODUCIBILITY_MISMATCH:{raw_id}")
         if not calculation.evidence_ids and not calculation.source_ids:
             errors.append(f"CALCULATION_INPUT_PROVENANCE_MISSING:{raw_id}")
         nested = await validate_evidence_references(db, session, calculation.evidence_ids)
@@ -112,6 +119,8 @@ async def validate_evidence_references(db: AsyncSession, session: InvestigationS
             errors.append(f"CROSS_INVESTIGATION_EVIDENCE:{raw_id}")
         if source.workspace_id != session.workspace_id or content.workspace_id != session.workspace_id:
             errors.append(f"CROSS_WORKSPACE_EVIDENCE:{raw_id}")
+        if content.source_id != source.id or evidence.source_id != source.id:
+            errors.append(f"BROKEN_EVIDENCE_SOURCE_CHAIN:{raw_id}")
         if not evidence.exact_quote or evidence.exact_quote not in content.content:
             errors.append(f"EVIDENCE_CONTENT_MISMATCH:{raw_id}")
     return errors
@@ -119,7 +128,10 @@ async def validate_evidence_references(db: AsyncSession, session: InvestigationS
 
 async def validate_supporting_claims(db: AsyncSession, session_id: uuid.UUID, claim_codes: Iterable[str]) -> ValidationResult:
     errors = []
-    for code in dict.fromkeys(claim_codes):
+    codes = list(dict.fromkeys(claim_codes))
+    if not codes:
+        return ValidationResult(False, ["UNSUPPORTED_INFERENCE"])
+    for code in codes:
         claim = (await db.execute(select(VerifiedClaim).where(
             VerifiedClaim.session_id == session_id,
             VerifiedClaim.claim_id_code == code,

@@ -86,7 +86,7 @@ async def logout(request: Request, response: Response, refresh_value: str | None
     parsed = parse_refresh_token(refresh_value or "")
     if parsed:
         token = (await db.execute(select(RefreshToken).where(RefreshToken.id == parsed[0]))).scalar_one_or_none()
-        if token:
+        if token and hmac.compare_digest(token.token_hash, hash_refresh_secret(parsed[1])):
             now = datetime.now(timezone.utc); await db.execute(update(UserSession).where(UserSession.id == token.session_id).values(revoked_at=now)); await db.execute(update(RefreshToken).where(RefreshToken.session_id == token.session_id, RefreshToken.revoked_at.is_(None)).values(revoked_at=now)); await db.commit()
     _clear_cookie(response); return ResponseEnvelope.ok({"logged_out": True})
 

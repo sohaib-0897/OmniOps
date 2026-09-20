@@ -1,31 +1,55 @@
+# Environments and Secrets
 .env
+.env.*
+!.env.example
+
+# Databases and Local Storage
 *.db
-*.log
-.pytest_cache/
-**/.pytest_cache/
-.tmp_test/
-tmp*/
+*.sqlite
+*.dump
 backend/storage/uploads/
 backend/storage/parquet/
+backend/storage/temp/
+
+# Logs and Caches
+*.log
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Node / Next.js
 frontend/node_modules/
 frontend/.next/
 frontend/tsconfig.tsbuildinfo
 frontend/coverage/
 frontend/test-results/
 frontend/playwright-report/
-__pycache__/
-**/__pycache__/
-*.pyc
 
-# Local environments and private laboratory artifacts
+# Virtual Environments
 .venv/
 **/.venv/
+
+# Laboratory and Temporary Verification Artifacts
+.tmp_test/
+tmp*/
+.test-temp*/
+.tmp*/
 .ui-qa/
-.env.*
-!.env.example
-backend/storage/temp/
-*.dump
+*.sarif
 phase7-evidence/extended-browser-context.json
 phase7-evidence/provider-chain.json
 phase7-evidence/provider-smoke.json
 phase7-evidence/test-media/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
