@@ -4,15 +4,15 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, AliasChoices
 
 class PlannedTask(BaseModel):
-    id: str
+    id: str = Field(min_length=1, max_length=100)
     title: str
     description: str
-    target_modality: str  # "tabular", "document", "audio", "multimodal", "sandbox"
+    target_modality: str = Field(min_length=1, max_length=50)  # persisted evidence type
     expected_output: str
 
 class PlanOutput(BaseModel):
     reasoning_summary: str
-    tasks: List[PlannedTask]
+    tasks: List[PlannedTask] = Field(min_length=1, max_length=4)
 
 class ToolDecision(BaseModel):
     tool_name: str

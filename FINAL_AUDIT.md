@@ -247,3 +247,18 @@ The following claims are verified and safe for professional representation:
 - Built a strict seven-stage evidence lineage verification system with canonical JSON calculation reproducibility hashing and cascading deletion invalidation.
 - Implemented security controls including HttpOnly refresh token rotation with replay detection, multi-tenant workspace predicates, SSRF protection with IP range filtering, and containerized Python sandbox isolation.
 - Built Dockerized multi-container topologies enforcing non-root users, read-only root filesystems, dropped capabilities, and health check gates.
+
+---
+
+## Post-v1.0.0 Local-Provider Verification (2026-09-22)
+
+This section records new verification without rewriting the historical audit results above.
+
+- **Original deployed symptom:** Real UI investigations reached `failed` without a final report, despite the deterministic regression suite passing.
+- **Root causes corrected:** The worker lacked provider egress, natural-language objectives were passed verbatim to PostgreSQL full-text search, and failure cleanup could access expired ORM state after a failed transaction and raise `MissingGreenlet`.
+- **Hosted-provider limitation:** Gemini remains supported, but its real E2E was not passed because the configured project returned the explicit external failure `PROVIDER_RATE_LIMITED`.
+- **Local provider:** Ollama 0.34.2 with `qwen3:4b` (Q4_K_M) is selectable explicitly through `LLM_PROVIDER=ollama`; provider failures never trigger a silent fallback.
+- **Real E2E:** Investigation `a7964ff8-1ace-4e72-b557-2c734007d126` used a real uploaded source, PostgreSQL persistence/retrieval, the durable worker, and the real local model. It persisted one plan, one plan step, one tool attempt, one observation, one evidence item, three verified claims, and a final report; it then reached `completed`, released its lease, emitted `investigation.completed` over SSE, and rendered through the frontend-compatible API response.
+- **Evidence integrity:** All three factual claims cite the persisted evidence derived from the uploaded source; no calculations or fabricated fallbacks were used.
+- **Explicit failure proof:** With the Ollama endpoint deliberately unavailable, investigation `7f801ead-4c87-4b4d-bb2a-8515e8339c18` reached `failed` with `PROVIDER_UNAVAILABLE`, persisted no report, emitted the failure event, and released its lease.
+- **Fresh regression:** Backend `214 passed, 0 failed, 0 skipped`; benchmark evals `15/15`; frontend TypeScript, lint, and production build passed; development, production, and Ubuntu Compose configurations validated.

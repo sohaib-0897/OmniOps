@@ -1,16 +1,22 @@
 import logging
+from typing import Any, Dict, List
+
 import httpx
-from typing import Dict, Any, List, Optional
+
 from app.llm.base import (
     BaseLLMClient,
+    CapabilityLimitError,
     PlanOutput,
     PlannedTask,
+    ProviderError,
+    ProviderState,
+    SynthesisReport,
     ToolDecision,
-    SynthesisReport, ProviderError, ProviderState
 )
 from app.llm.openai_provider import OpenAIProvider
 from app.llm.gemini_provider import GeminiProvider
 from app.llm.analytical_provider import AnalyticalProvider
+from app.llm.ollama_provider import OllamaProvider
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -24,19 +30,44 @@ class OmniOpsLLMClient(BaseLLMClient):
         self.provider_state = ProviderState.AVAILABLE
 
     def _initialize_provider(self) -> BaseLLMClient:
-        provider_mode = (settings.LLM_PROVIDER or "auto").lower()
+        provider_mode = (settings.LLM_PROVIDER or "").strip().lower()
 
-        if provider_mode == "openai" or (provider_mode == "auto" and settings.OPENAI_API_KEY):
+        if provider_mode == "ollama":
+            logger.info("Initializing Ollama Provider (%s)", settings.OLLAMA_MODEL)
+            return OllamaProvider(
+                base_url=settings.OLLAMA_BASE_URL,
+                model=settings.OLLAMA_MODEL,
+                timeout_seconds=settings.OLLAMA_TIMEOUT_SECONDS,
+            )
+
+        if provider_mode == "openai":
+            if not settings.OPENAI_API_KEY:
+                raise CapabilityLimitError("LLM_PROVIDER=openai requires OPENAI_API_KEY.")
             logger.info("Initializing OpenAI Provider (%s)", settings.OPENAI_MODEL)
             return OpenAIProvider(api_key=settings.OPENAI_API_KEY, model=settings.OPENAI_MODEL)
 
-        elif provider_mode == "gemini" or (provider_mode == "auto" and settings.GEMINI_API_KEY):
+        if provider_mode == "gemini":
+            if not settings.GEMINI_API_KEY:
+                raise CapabilityLimitError("LLM_PROVIDER=gemini requires GEMINI_API_KEY.")
             logger.info("Initializing Google Gemini Provider (%s)", settings.GEMINI_MODEL)
             return GeminiProvider(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
 
-        else:
-            logger.info("Initializing Dynamic Analytical Engine (Offline Provider)")
+        if provider_mode == "analytical" and settings.ENVIRONMENT.lower() in {"development", "test"}:
+            logger.info("Initializing Dynamic Analytical Engine (explicit development/test provider)")
             return AnalyticalProvider()
+
+        raise CapabilityLimitError(
+            "Set LLM_PROVIDER explicitly to ollama, gemini, or openai and configure that provider."
+        )
+
+    async def readiness(self) -> Dict[str, str]:
+        if isinstance(self._provider, OllamaProvider):
+            return await self._provider.readiness()
+        return {
+            "status": "ready",
+            "provider": self.provider_name.removesuffix("Provider").lower(),
+            "model": getattr(self._provider, "model", "configured"),
+        }
 
     async def generate_investigation_plan(
         self,
@@ -84,7 +115,7 @@ class OmniOpsLLMClient(BaseLLMClient):
             )
             raise ProviderError(
                 ProviderState.MALFORMED_RESPONSE,
-                "SEMANTIC_PROVIDER_FAILED",
+                "PROVIDER_RESPONSE_INVALID",
                 f"{self.provider_name} failed during {operation}; the investigation was stopped.",
             ) from exc
 

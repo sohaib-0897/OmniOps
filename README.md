@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Python%203.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/Tests-187%2F187%20Passed-brightgreen?style=flat-square" alt="Tests Passed" />
+  <img src="https://img.shields.io/badge/Tests-212%2F212%20Passed-brightgreen?style=flat-square" alt="Tests Passed" />
 </p>
 
 ---
@@ -81,6 +81,30 @@ Sandbox Runner (Ephemeral non-root container, --net=none, resource limits)
 - Python 3.12+
 - Node.js 20+
 - Docker & Docker Compose (optional for local SQLite, required for full PostgreSQL/pgvector and sandbox execution)
+- Ollama for free local planning and synthesis, or credentials for an explicitly selected hosted provider
+
+### Local planning and synthesis with Ollama
+
+This machine profile (16 GB RAM and a 6 GB RTX 4050 Laptop GPU) is well suited to
+`qwen3:4b` (about 2.5 GB quantized) as the default. `qwen3:1.7b` is the
+lower-resource alternative; `qwen3:8b` may improve quality but is more likely to
+spill beyond 6 GB VRAM and run more slowly.
+
+1. Install [Ollama](https://ollama.com/download) and keep its local service running.
+2. Pull one model: `ollama pull qwen3:4b`.
+3. Set `LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen3:4b`, and set
+   `OLLAMA_BASE_URL=http://host.docker.internal:11434` for Docker Desktop. Use
+   `http://127.0.0.1:11434` when the backend and worker run directly on the host.
+4. Start OmniOps and request `/api/v1/readiness`; `checks.llm_provider.status`
+   must be `ready` before running an investigation.
+5. Upload a source, wait for `READY`, then create an investigation normally.
+
+Provider selection is explicit and never falls back after failure. Ollama handles
+text planning, tool decisions, and synthesis only. Tesseract OCR remains local;
+Gemini credentials and compatible Gemini models are still required for the
+existing image-vision and audio-transcription capabilities. Local generative
+models are not used as embedding models, so PostgreSQL lexical retrieval remains
+available when semantic embeddings are unavailable.
 
 ### 1. Backend Setup
 
@@ -135,9 +159,9 @@ The platform enforces zero unexplained skips, zero failures, and comprehensive r
 
 | Verification Suite | Target / Command | Result |
 |---|---|---|
-| **Full Backend Suite** | `pytest backend/tests -q --disable-warnings` | **187 passed, 0 failed, 0 skipped** (38.45s) |
+| **Full Backend Suite** | `pytest backend/tests -q --disable-warnings` | **212 passed, 0 failed, 0 skipped** (95.81s) |
 | **Benchmark Evals** | `python -m evals.runner` | **15 / 15 passed (100%)** |
-| **PostgreSQL Retrieval** | `pytest backend/tests/test_postgres_hybrid_retrieval.py` | **5 passed** (FTS, vector distance, RRF, HNSW/GIN plans) |
+| **PostgreSQL Retrieval** | `pytest backend/tests/test_postgres_hybrid_retrieval.py` | **6 passed** (FTS, vector distance, RRF, HNSW/GIN plans) |
 | **Phase 1 Integrity** | `pytest backend/tests/test_phase1_integrity.py` | **7 passed** |
 | **Phase 3 Runtime** | `pytest backend/tests/test_phase3_*.py` | **27 passed** (leases, recovery, fencing, idempotency) |
 | **Phase 4 Security** | `pytest backend/tests/test_phase4_*.py ...` | **74 passed** (runner boundary, SSRF, sandbox container) |

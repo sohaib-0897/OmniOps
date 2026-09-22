@@ -1,4 +1,6 @@
+import re
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -223,6 +225,26 @@ def test_sandbox_runner_health_requires_runner_secret(monkeypatch):
         sandbox_runner_server.health(None)
     assert error.value.status_code == 401
     assert sandbox_runner_server.health("Bearer test-runner-secret") == {"status": "ok"}
+
+
+def test_production_worker_has_provider_egress_without_exposing_runner_network():
+    compose = (
+        Path(__file__).resolve().parents[2] / "docker-compose.ubuntu.yml"
+    ).read_text(encoding="utf-8")
+
+    worker = re.search(r"(?ms)^  worker:\n(.*?)(?=^  frontend:)", compose)
+    runner = re.search(r"(?ms)^  sandbox-runner:\n(.*?)(?=^  caddy:)", compose)
+
+    assert worker is not None
+    assert "networks: [data, runner, egress]" in worker.group(1)
+    assert 'extra_hosts: ["host.docker.internal:host-gateway"]' in worker.group(1)
+    assert "OLLAMA_BASE_URL:" in compose
+    assert runner is not None
+    assert "networks: [runner]" in runner.group(1)
+    assert "host.docker.internal" not in runner.group(1)
+    assert re.search(r"(?m)^  egress:\s*$", compose)
+    assert re.search(r"(?ms)^  data:\n    internal: true", compose)
+    assert re.search(r"(?ms)^  runner:\n    internal: true", compose)
 
 
 @pytest.mark.asyncio

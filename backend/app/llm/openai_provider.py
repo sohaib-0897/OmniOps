@@ -39,7 +39,7 @@ class OpenAIProvider(BaseLLMClient):
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(self.endpoint, headers=headers, json=payload)
             if resp.status_code in (401, 403):
-                raise ProviderError(ProviderState.AUTHENTICATION_FAILED, "PROVIDER_AUTHENTICATION_FAILED", "OpenAI authentication failed.")
+                raise ProviderError(ProviderState.AUTHENTICATION_FAILED, "PROVIDER_AUTH_FAILED", "OpenAI authentication failed.")
             if resp.status_code == 429:
                 raise ProviderError(ProviderState.RATE_LIMITED, "PROVIDER_RATE_LIMITED", "OpenAI rate limit reached.")
             if resp.status_code != 200:

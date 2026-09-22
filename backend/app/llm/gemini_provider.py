@@ -1,26 +1,56 @@
+import asyncio
 import json
-import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 import httpx
+
 from app.llm.base import (
     BaseLLMClient,
+    EpistemicClaim,
+    InferenceItem,
     PlanOutput,
     PlannedTask,
-    ToolDecision,
+    ProviderError,
+    ProviderState,
+    RecommendationItem,
     SynthesisReport,
-    EpistemicClaim,
-    RecommendationItem, InferenceItem, ProviderError, ProviderState
+    ToolDecision,
 )
 
-logger = logging.getLogger(__name__)
 
 class GeminiProvider(BaseLLMClient):
     """Google Gemini REST API provider using structured JSON outputs."""
+
+    MAX_ATTEMPTS = 5
+    REQUEST_TIMEOUT_SECONDS = 15.0
+    RETRY_BUDGET_SECONDS = 90.0
+    MAX_RETRY_AFTER_SECONDS = 30.0
 
     def __init__(self, api_key: str, model: str = "gemini-3.8-flash"):
         self.api_key = api_key
         self.model = model
         self.endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions"
+
+    @staticmethod
+    def _error_code(response: httpx.Response) -> Optional[str]:
+        try:
+            body = response.json()
+        except (TypeError, ValueError):
+            return None
+        error = body.get("error") if isinstance(body, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        return code if isinstance(code, str) else None
+
+    @classmethod
+    def _retry_delay(cls, response: Optional[httpx.Response], attempt: int) -> float:
+        if response is not None:
+            retry_after = response.headers.get("retry-after")
+            if retry_after:
+                try:
+                    return min(max(float(retry_after), 1.0), cls.MAX_RETRY_AFTER_SECONDS)
+                except ValueError:
+                    pass
+        return float(2 ** attempt)
 
     async def _call_gemini(self, system_instruction: str, prompt: str) -> str:
         headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
@@ -31,23 +61,91 @@ class GeminiProvider(BaseLLMClient):
             "response_format": {"type": "text", "mime_type": "application/json"},
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(self.endpoint, headers=headers, json=payload)
-            if resp.status_code in (401, 403):
-                raise ProviderError(ProviderState.AUTHENTICATION_FAILED, "PROVIDER_AUTHENTICATION_FAILED", "Gemini authentication failed.")
-            if resp.status_code == 429:
-                raise ProviderError(ProviderState.RATE_LIMITED, "PROVIDER_RATE_LIMITED", "Gemini rate limit reached.")
-            if resp.status_code != 200:
-                raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", f"Gemini returned HTTP {resp.status_code}.")
-            data = resp.json()
-            output_text = data.get("output_text")
-            if isinstance(output_text, str) and output_text.strip():
-                return output_text.strip()
-            for step in data.get("steps", []):
-                for content in step.get("content", []) if isinstance(step, dict) else []:
-                    if isinstance(content, dict) and isinstance(content.get("text"), str) and content["text"].strip():
-                        return content["text"].strip()
-            raise ValueError("Gemini returned empty interaction response")
+        loop = asyncio.get_running_loop()
+        retry_deadline = loop.time() + self.RETRY_BUDGET_SECONDS
+
+        async def sleep_before_retry(response: Optional[httpx.Response], attempt: int) -> bool:
+            # Reserve one full request timeout so this provider call remains
+            # inside the durable worker's 120-second lease.
+            remaining = retry_deadline - loop.time() - self.REQUEST_TIMEOUT_SECONDS
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(self._retry_delay(response, attempt), remaining))
+            return True
+
+        async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT_SECONDS, trust_env=False) as client:
+            for attempt in range(self.MAX_ATTEMPTS):
+                try:
+                    resp = await client.post(self.endpoint, headers=headers, json=payload)
+                except httpx.TimeoutException as exc:
+                    if attempt == self.MAX_ATTEMPTS - 1 or not await sleep_before_retry(None, attempt):
+                        raise ProviderError(
+                            ProviderState.TIMEOUT,
+                            "PROVIDER_TIMEOUT",
+                            "Gemini timed out after bounded retries.",
+                        ) from exc
+                    continue
+                except httpx.TransportError as exc:
+                    if attempt == self.MAX_ATTEMPTS - 1 or not await sleep_before_retry(None, attempt):
+                        raise ProviderError(
+                            ProviderState.UNAVAILABLE,
+                            "PROVIDER_UNAVAILABLE",
+                            "Gemini transport remained unavailable after bounded retries.",
+                        ) from exc
+                    continue
+                if resp.status_code in (401, 403):
+                    raise ProviderError(ProviderState.AUTHENTICATION_FAILED, "PROVIDER_AUTH_FAILED", "Gemini authentication failed.")
+                if resp.status_code == 429:
+                    if self._error_code(resp) == "quota_exceeded":
+                        raise ProviderError(
+                            ProviderState.RATE_LIMITED,
+                            "PROVIDER_QUOTA_EXCEEDED",
+                            "Gemini project quota is exhausted.",
+                        )
+                    if attempt < self.MAX_ATTEMPTS - 1 and await sleep_before_retry(resp, attempt):
+                        continue
+                    raise ProviderError(ProviderState.RATE_LIMITED, "PROVIDER_RATE_LIMITED", "Gemini rate limit reached after bounded retries.")
+                if resp.status_code == 408:
+                    if attempt < self.MAX_ATTEMPTS - 1 and await sleep_before_retry(resp, attempt):
+                        continue
+                    raise ProviderError(ProviderState.TIMEOUT, "PROVIDER_TIMEOUT", "Gemini timed out after bounded retries.")
+                if resp.status_code >= 500:
+                    if attempt < self.MAX_ATTEMPTS - 1 and await sleep_before_retry(resp, attempt):
+                        continue
+                    raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", f"Gemini returned HTTP {resp.status_code} after bounded retries.")
+                if resp.status_code != 200:
+                    raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", f"Gemini returned HTTP {resp.status_code}.")
+                try:
+                    data = resp.json()
+                except (TypeError, ValueError) as exc:
+                    raise ProviderError(
+                        ProviderState.MALFORMED_RESPONSE,
+                        "PROVIDER_RESPONSE_INVALID",
+                        "Gemini returned malformed interaction output.",
+                    ) from exc
+                if not isinstance(data, dict):
+                    raise ProviderError(
+                        ProviderState.MALFORMED_RESPONSE,
+                        "PROVIDER_RESPONSE_INVALID",
+                        "Gemini returned malformed interaction output.",
+                    )
+                return self._response_text(data)
+        raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", "Gemini retry loop ended without a response.")
+
+    @staticmethod
+    def _response_text(data: Dict[str, Any]) -> str:
+        output_text = data.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+        for step in data.get("steps", []):
+            for content in step.get("content", []) if isinstance(step, dict) else []:
+                if isinstance(content, dict) and isinstance(content.get("text"), str) and content["text"].strip():
+                    return content["text"].strip()
+        raise ProviderError(
+            ProviderState.MALFORMED_RESPONSE,
+            "PROVIDER_RESPONSE_INVALID",
+            "Gemini returned empty interaction output.",
+        )
 
     async def generate_investigation_plan(
         self,

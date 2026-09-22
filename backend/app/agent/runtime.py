@@ -289,20 +289,17 @@ async def acquire_lease(session: AsyncSession, investigation: InvestigationSessi
     return False
 
 
-async def release_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str) -> None:
-    result = await session.execute(
+async def release_lease(session: AsyncSession, investigation_id: UUID, worker_id: str) -> None:
+    """Release a lease using a stable identity that survives rollback/expiry."""
+    await session.execute(
         update(InvestigationSession)
         .where(
-            InvestigationSession.id == investigation.id,
+            InvestigationSession.id == investigation_id,
             InvestigationSession.worker_id == worker_id,
         )
         .values(worker_id=None, lease_acquired_at=None, lease_expires_at=None)
     )
-    if result.rowcount:
-        from sqlalchemy.orm.attributes import set_committed_value
-        set_committed_value(investigation, "worker_id", None)
-        set_committed_value(investigation, "lease_acquired_at", None)
-        set_committed_value(investigation, "lease_expires_at", None)
+    await session.flush()
 
 
 async def renew_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = 120) -> bool:

@@ -28,6 +28,7 @@ from app.agent.runtime import (
     publish_persisted_runtime_events,
     prepare_claimed_investigation_for_recovery,
     release_lease,
+    renew_lease,
     SimulatedWorkerCrash,
     transition,
 )
@@ -252,7 +253,21 @@ class InvestigationRuntime:
             } for row in tables],
         }
 
-    async def _provider_plan(self, investigation: InvestigationSession) -> PlanSpec:
+    async def _renew_provider_lease(
+        self,
+        investigation: InvestigationSession,
+        worker_id: str | None,
+    ) -> None:
+        if worker_id and self.db.get_bind().dialect.name != "sqlite":
+            if not await renew_lease(self.db, investigation, worker_id):
+                raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
+
+    async def _provider_plan(
+        self,
+        investigation: InvestigationSession,
+        worker_id: str | None = None,
+    ) -> PlanSpec:
+        await self._renew_provider_lease(investigation, worker_id)
         output = await self.llm_client.generate_investigation_plan(
             investigation.objective, await self._catalog_summary(investigation),
         )
@@ -264,6 +279,7 @@ class InvestigationRuntime:
         } for name in self.registry.names()]
         steps: list[PlanStepSpec] = []
         for task in output.tasks[: investigation.max_steps]:
+            await self._renew_provider_lease(investigation, worker_id)
             decision = await self.llm_client.decide_next_action(
                 investigation.objective, task, [], available,
             )
@@ -271,7 +287,7 @@ class InvestigationRuntime:
                 raise RuntimeError(RuntimeErrorCode.INVALID_PROVIDER_OUTPUT.value)
             steps.append(PlanStepSpec(
                 step_id=task.id, objective=task.description, tool_name=decision.tool_name,
-                inputs=decision.arguments, expected_evidence_type=task.expected_output,
+                inputs=decision.arguments, expected_evidence_type=task.target_modality,
                 completion_criteria={"evidence_required": decision.tool_name in {
                     "hybrid_document_search", "safe_web_retrieval",
                 }},
@@ -280,7 +296,11 @@ class InvestigationRuntime:
             raise RuntimeError(RuntimeErrorCode.INVALID_PROVIDER_OUTPUT.value)
         return PlanSpec(objective=investigation.objective, steps=steps)
 
-    async def _synthesize(self, investigation: InvestigationSession) -> Dict[str, Any]:
+    async def _synthesize(
+        self,
+        investigation: InvestigationSession,
+        worker_id: str | None = None,
+    ) -> Dict[str, Any]:
         evidence_rows = (await self.db.execute(
             select(EvidenceItem, DocumentChunk, SourceDocument)
             .join(DocumentChunk, EvidenceItem.chunk_id == DocumentChunk.id)
@@ -304,6 +324,7 @@ class InvestigationRuntime:
             "formula_or_code": row.formula_or_code, "input_values": row.input_values,
             "computed_output": row.computed_output, "reproducibility_hash": row.reproducibility_hash,
         } for row in calculations]
+        await self._renew_provider_lease(investigation, worker_id)
         proposal = await self.llm_client.verify_and_synthesize(
             investigation.objective,
             [{"classification": row.classification, "success": row.success, "summary": row.summary} for row in observations],
@@ -408,6 +429,7 @@ class InvestigationRuntime:
         }
 
     async def execute_claimed(self, investigation: InvestigationSession, worker_id: str | None = None) -> Dict[str, Any]:
+        investigation_id = investigation.id
         if RuntimeState(investigation.current_state) in {
             RuntimeState.COMPLETED, RuntimeState.CANCELLED, RuntimeState.FAILED,
         }:
@@ -419,7 +441,7 @@ class InvestigationRuntime:
                 if self.production_default:
                     if RuntimeState(investigation.current_state) == RuntimeState.CREATED:
                         await transition(self.db, investigation, RuntimeState.PLANNING, "provider_planning")
-                    plan = await self._provider_plan(investigation)
+                    plan = await self._provider_plan(investigation, worker_id)
                 else:
                     plan = PlanSpec(objective=investigation.objective, steps=[PlanStepSpec(
                         step_id="retrieval-1", objective=investigation.objective,
@@ -447,7 +469,7 @@ class InvestigationRuntime:
                     logical_identity(investigation.id, "synthesis.started", investigation.plan_version),
                     {"plan_version": investigation.plan_version},
                 )
-                report = await self._synthesize(investigation) if self.production_default else {
+                report = await self._synthesize(investigation, worker_id) if self.production_default else {
                     "executive_summary": "Injected deterministic runtime completed.",
                     "key_findings": [], "claims": [], "inferences": [], "recommendations": [],
                     "rejected_proposals": [], "missing_data_warnings": [], "contradictions": [],
@@ -477,18 +499,44 @@ class InvestigationRuntime:
         except SimulatedWorkerCrash:
             raise
         except Exception as exc:
-            if worker_id and self.db.get_bind().dialect.name != "sqlite" and not await owns_lease(
-                self.db, investigation.id, worker_id,
+            raw_code = getattr(exc, "code", None) or str(exc).split(":", 1)[0].strip()
+            failure_code = str(raw_code)
+            if (
+                not failure_code
+                or len(failure_code) > 80
+                or failure_code.upper() != failure_code
+                or not failure_code.replace("_", "").isalnum()
             ):
-                await self.db.rollback()
-                return {"status": RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value}
-            if RuntimeState(investigation.current_state) not in {
+                failure_code = "INVESTIGATION_FAILED"
+
+            # A failed flush leaves AsyncSession in partial rollback. Recover
+            # before checking fencing or persisting the explicit failure.
+            await self.db.rollback()
+            investigation = (await self.db.execute(
+                select(InvestigationSession)
+                .where(InvestigationSession.id == investigation_id)
+                .with_for_update()
+            )).scalar_one()
+            if worker_id and self.db.get_bind().dialect.name != "sqlite":
+                lease_expiry = investigation.lease_expires_at
+                if lease_expiry is not None and lease_expiry.tzinfo is None:
+                    lease_expiry = lease_expiry.replace(tzinfo=timezone.utc)
+                fenced = investigation.worker_id not in {None, worker_id}
+                stale = investigation.worker_id == worker_id and (
+                    lease_expiry is None or lease_expiry < datetime.now(timezone.utc)
+                )
+                if fenced or stale:
+                    await self.db.rollback()
+                    return {"status": RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value}
+            if RuntimeState(investigation.current_state) in {
                 RuntimeState.COMPLETED, RuntimeState.CANCELLED, RuntimeState.FAILED,
             }:
-                investigation.current_state = RuntimeState.FAILED.value
-                investigation.completed_at = datetime.now(timezone.utc)
+                await self.db.rollback()
+                return {"status": investigation.current_state}
+            investigation.current_state = RuntimeState.FAILED.value
+            investigation.completed_at = datetime.now(timezone.utc)
             investigation.status = InvestigationStatus.FAILED.value
-            investigation.failure_code = getattr(exc, "code", None) or str(exc).split(":", 1)[0] or "INVESTIGATION_FAILED"
+            investigation.failure_code = failure_code
             investigation.failure_message = "Durable runtime could not complete the investigation."
             await persist_runtime_event(
                 self.db, investigation.id, "investigation.failed",
@@ -502,11 +550,14 @@ class InvestigationRuntime:
         investigation = await claim_next_investigation(self.db, worker_id)
         if investigation is None:
             return None
+        investigation_id = investigation.id
         try:
             await prepare_claimed_investigation_for_recovery(self.db, investigation)
             return await self.execute_claimed(investigation, worker_id)
         finally:
-            await release_lease(self.db, investigation, worker_id)
+            if not self.db.is_active:
+                await self.db.rollback()
+            await release_lease(self.db, investigation_id, worker_id)
             await self.db.commit(); await publish_persisted_runtime_events(self.db)
 
 
@@ -541,5 +592,5 @@ async def run_investigation(
     try:
         return await runtime.execute_claimed(session, worker_id)
     finally:
-        await release_lease(db, session, worker_id)
+        await release_lease(db, session_id, worker_id)
         await db.commit(); await publish_persisted_runtime_events(db)

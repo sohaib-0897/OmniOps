@@ -5,11 +5,33 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-from app.agent.runtime import PlanSpec, PlanStepSpec, ToolDefinition, ToolRegistry, RuntimeState, RuntimeBudget, DurablePlanExecutor, replan, transition, acquire_lease, resume_investigation, record_contradiction, detect_numeric_contradictions, ObservationDecision, claim_next_investigation, persist_runtime_event, get_or_create_logical_output, logical_identity
-from app.models.investigation import InvestigationSession, AgentPlan, AgentToolAttempt, AgentObservation
+from app.agent.runtime import (
+    DurablePlanExecutor,
+    ObservationDecision,
+    PlanSpec,
+    PlanStepSpec,
+    RuntimeBudget,
+    RuntimeState,
+    ToolDefinition,
+    ToolRegistry,
+    acquire_lease,
+    claim_next_investigation,
+    detect_numeric_contradictions,
+    get_or_create_logical_output,
+    logical_identity,
+    persist_runtime_event,
+    record_contradiction,
+    release_lease,
+    replan,
+    resume_investigation,
+    transition,
+)
+from app.agent.service import InvestigationRuntime, run_investigation, RetrievalInput
 from app.models.evidence import RuntimeEvent
-from app.agent.service import run_investigation, RetrievalInput
+from app.models.investigation import AgentObservation, AgentPlan, AgentToolAttempt, InvestigationSession
+from app.models.user import User
 
 
 class Input(BaseModel):
@@ -115,6 +137,55 @@ async def test_lease_and_resume_orphan_running_attempt(db_session, test_user, te
     await db_session.commit()
     with pytest.raises(RuntimeError, match="WORKER_LEASE_UNAVAILABLE"):
         await resume_investigation(db_session, investigation.id, "worker-b")
+
+
+@pytest.mark.asyncio
+async def test_release_lease_uses_stable_id_after_orm_expiration(db_session, test_user, test_workspace):
+    investigation = InvestigationSession(workspace_id=test_workspace.id, user_id=test_user.id, objective="expired cleanup")
+    db_session.add(investigation)
+    await db_session.commit()
+    investigation_id = investigation.id
+    assert await acquire_lease(db_session, investigation, "worker-a")
+    await db_session.commit()
+
+    db_session.expire(investigation)
+    await release_lease(db_session, investigation_id, "worker-a")
+    await db_session.commit()
+
+    stored = await db_session.get(InvestigationSession, investigation_id)
+    assert stored.worker_id is None
+    assert stored.lease_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_worker_cleanup_rolls_back_failed_flush_before_releasing_lease(
+    db_session, test_user, test_workspace, monkeypatch,
+):
+    investigation = InvestigationSession(
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        objective="failed flush cleanup",
+    )
+    db_session.add(investigation)
+    await db_session.commit()
+    investigation_id = investigation.id
+    runtime = InvestigationRuntime(db_session)
+
+    async def fail_with_invalid_transaction(_investigation, _worker_id):
+        db_session.add(User(
+            email=test_user.email,
+            hashed_password="duplicate",
+            full_name="Duplicate",
+        ))
+        await db_session.flush()
+
+    monkeypatch.setattr(runtime, "execute_claimed", fail_with_invalid_transaction)
+    with pytest.raises(IntegrityError):
+        await runtime.run_worker_once("cleanup-worker")
+
+    stored = await db_session.get(InvestigationSession, investigation_id)
+    assert stored.worker_id is None
+    assert stored.lease_expires_at is None
 
 
 @pytest.mark.asyncio

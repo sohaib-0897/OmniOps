@@ -126,6 +126,43 @@ async def test_postgres_fts_and_deterministic_rrf(pg_session, retrieval_data, qu
 
 
 @pytest.mark.asyncio
+async def test_natural_language_fts_remains_available_without_embeddings(
+    pg_session, retrieval_data, monkeypatch,
+):
+    async def unavailable_embedding(cls, text_value, *, allow_development_fallback=False):
+        return EmbeddingResult(
+            state=EmbeddingState.EMBEDDING_PROVIDER_UNAVAILABLE,
+            vector=None,
+            provider=None,
+            model=None,
+            dimension=None,
+            generated_at=None,
+        )
+
+    monkeypatch.setattr(EmbeddingProvider, "generate", classmethod(unavailable_embedding))
+    response = await HybridRetriever.search(
+        retrieval_data["workspace_a"].id,
+        '"highest operating margin" -secret',
+        pg_session,
+        top_k=3,
+    )
+
+    assert response.mode == "LEXICAL_ONLY"
+    assert response.semantic_state == EmbeddingState.EMBEDDING_PROVIDER_UNAVAILABLE.value
+    assert response.lexical_state == "READY"
+    assert response.results[0].chunk_id == str(retrieval_data["lexical"].id)
+
+    natural_objective = await HybridRetriever.search(
+        retrieval_data["workspace_a"].id,
+        "Summarize key facts and identify the most important supported finding about operating margin in the uploaded source",
+        pg_session,
+        top_k=3,
+    )
+    assert natural_objective.results
+    assert natural_objective.results[0].chunk_id == str(retrieval_data["lexical"].id)
+
+
+@pytest.mark.asyncio
 async def test_tenant_and_source_filters_are_database_predicates(pg_session, retrieval_data, query_embedding):
     response = await HybridRetriever.search(retrieval_data["workspace_a"].id, "highest operating margin", pg_session, top_k=10)
     assert str(retrieval_data["foreign"].id) not in {result.chunk_id for result in response.results}

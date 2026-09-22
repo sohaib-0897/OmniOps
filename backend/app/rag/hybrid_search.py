@@ -64,6 +64,22 @@ def _validate_request(query: str, top_k: int, source_ids: Optional[Sequence[uuid
     return query
 
 
+def _lexical_websearch_query(query: str) -> str:
+    """Turn arbitrary natural language into a bounded, parameterized OR query."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw_token in re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE):
+        token = raw_token[:64]
+        if token and token not in seen:
+            seen.add(token)
+            tokens.append(token)
+        if len(tokens) == 32:
+            break
+    if not tokens:
+        raise RetrievalError("EMPTY_RETRIEVAL_QUERY", "Retrieval query must contain searchable terms.")
+    return " OR ".join(tokens)
+
+
 class PostgresHybridRetriever:
     """PostgreSQL-native pgvector + full-text candidates fused by database-side RRF."""
 
@@ -76,7 +92,8 @@ class PostgresHybridRetriever:
         semantic_ready = embedding.state == EmbeddingState.READY
         predicates = ["dc.workspace_id = :workspace_id"]
         params: Dict[str, Any] = {
-            "workspace_id": workspace_id, "query": query, "top_k": top_k,
+            "workspace_id": workspace_id, "query": query,
+            "lexical_query": _lexical_websearch_query(query), "top_k": top_k,
             "candidate_limit": min(settings.RETRIEVAL_CANDIDATE_LIMIT, 200), "rrf_k": settings.HYBRID_RRF_K,
         }
         if modality_filter:
@@ -111,11 +128,11 @@ class PostgresHybridRetriever:
             WITH {semantic_cte},
             lexical AS (
                 SELECT dc.id,
-                       row_number() OVER (ORDER BY ts_rank_cd(dc.search_vector, websearch_to_tsquery('english', :query)) DESC, dc.id) AS lexical_rank,
-                       ts_rank_cd(dc.search_vector, websearch_to_tsquery('english', :query)) AS lexical_score
+                       row_number() OVER (ORDER BY ts_rank_cd(dc.search_vector, websearch_to_tsquery('english', :lexical_query)) DESC, dc.id) AS lexical_rank,
+                       ts_rank_cd(dc.search_vector, websearch_to_tsquery('english', :lexical_query)) AS lexical_score
                 FROM document_chunks dc
                 WHERE {where_sql}
-                  AND dc.search_vector @@ websearch_to_tsquery('english', :query)
+                  AND dc.search_vector @@ websearch_to_tsquery('english', :lexical_query)
                   AND dc.lexical_search_status = 'READY'
                 ORDER BY lexical_score DESC, dc.id
                 LIMIT :candidate_limit

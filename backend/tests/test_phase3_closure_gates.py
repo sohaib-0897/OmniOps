@@ -201,7 +201,7 @@ async def test_live_crash_before_commit_recovers_through_worker_runtime(pg_facto
         assert recovered.current_state == RuntimeState.READY.value
         worker_b = InvestigationRuntime(db, registry=registry, budget=RuntimeBudget(max_attempts_per_step=1))
         result = await worker_b.execute_claimed(recovered, "crash-worker-b")
-        await release_lease(db, recovered, "crash-worker-b")
+        await release_lease(db, investigation_id, "crash-worker-b")
         await db.commit()
         assert result["status"] == "completed"
         assert attempts == 2

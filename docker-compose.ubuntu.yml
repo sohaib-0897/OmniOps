@@ -38,7 +38,10 @@ services:
       SANDBOX_IMAGE: omniops-python-sandbox:ubuntu
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      LLM_PROVIDER: ${LLM_PROVIDER:?set LLM_PROVIDER}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-90}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
     depends_on:
       postgres: { condition: service_healthy }
@@ -59,6 +62,7 @@ services:
       migrate: { condition: service_completed_successfully }
       sandbox-runner: { condition: service_healthy }
     networks: [web, data, runner]
+    extra_hosts: ["host.docker.internal:host-gateway"]
 
   worker:
     image: omniops-backend:ubuntu
@@ -76,7 +80,8 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       sandbox-runner: { condition: service_healthy }
-    networks: [data, runner]
+    networks: [data, runner, egress]
+    extra_hosts: ["host.docker.internal:host-gateway"]
 
   frontend:
     image: omniops-frontend:ubuntu
@@ -132,8 +137,12 @@ networks:
   web:
   data:
     internal: true
+  # Runner control traffic stays internal. The runner launches every untrusted
+  # sandbox payload with network disabled; it never shares the worker's egress.
   runner:
     internal: true
+  # Only the durable worker joins this network to invoke configured providers.
+  egress:
 volumes:
   postgres_data:
   app_storage:

@@ -37,8 +37,17 @@ async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)
                     checks["sandbox_runner"] = "ready" if result.status_code == 200 else "unavailable"
             except httpx.HTTPError: pass
     else: checks["sandbox_runner"] = "development_local" if not settings.SANDBOX_RUNNER_URL else "configured"
+    try:
+        from app.llm.client import OmniOpsLLMClient
+        checks["llm_provider"] = await OmniOpsLLMClient().readiness()
+    except Exception as exc:
+        checks["llm_provider"] = {
+            "status": "unavailable",
+            "provider": (settings.LLM_PROVIDER or "unconfigured").lower(),
+            "code": getattr(exc, "code", "LLM_PROVIDER_REQUIRED"),
+        }
     checks["multimodal_capabilities"] = {k: v.status.value for k, v in capability_matrix().items()}
-    required = [checks.get("database") == "ready", checks.get("pgvector", "ready") == "ready", checks.get("migrations", "ready") == "ready", checks.get("sandbox_runner") not in {"unavailable"}]
+    required = [checks.get("database") == "ready", checks.get("pgvector", "ready") == "ready", checks.get("migrations", "ready") == "ready", checks.get("sandbox_runner") not in {"unavailable"}, checks["llm_provider"].get("status") == "ready"]
     ready = all(required); response.status_code = status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE
     return ResponseEnvelope.ok({"status": "ready" if ready else "not_ready", "checks": checks})
 

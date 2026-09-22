@@ -15,6 +15,7 @@ async def test_agent_orchestrator_execution_lifecycle(
     monkeypatch
 ):
     from app.core.config import settings
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "gemini")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     monkeypatch.setattr(settings, "GEMINI_API_KEY", None)
     session = InvestigationSession(

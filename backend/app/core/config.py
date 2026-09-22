@@ -110,7 +110,10 @@ class Settings(BaseSettings):
     AGENT_LOOP_DETECTION_THRESHOLD: int = 2
     
     # LLM & Embedding Settings
-    LLM_PROVIDER: str = "auto"  # "auto", "openai", "gemini", "analytical"
+    LLM_PROVIDER: str = ""  # Explicit: "ollama", "openai", or "gemini" ("analytical" is test/dev only)
+    OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"
+    OLLAMA_MODEL: str = "qwen3:4b"
+    OLLAMA_TIMEOUT_SECONDS: float = 90.0
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o"
     GEMINI_API_KEY: Optional[str] = None

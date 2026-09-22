@@ -26,3 +26,22 @@ The CI configuration defines tests, audits, and immutable SHA-tagged image build
 ## Deployment controls
 
 TLS/HSTS are enforced at the HTTPS edge. Malware scanning is a deployment control and is not built into OmniOps: place a real scanner/quarantine workflow before accepted objects become available, fail closed on scanner timeout, and retain scan results. The sandbox runner belongs on a separately protected/rootless-capable host; the development Docker-socket overlay is never a production topology.
+
+The durable worker requires controlled outbound access to the configured model provider in addition to database, storage, and authenticated runner connectivity. That egress must not be attached to the sandbox runner or its untrusted payloads; sandbox payload execution remains network-disabled. Provider authentication, rate-limit, quota, timeout, and availability failures are explicit and never produce fallback reports. Semantic embedding availability depends separately on a compatible configured embedding provider, while lexical PostgreSQL retrieval remains available when embeddings are unavailable.
+
+## Local Ollama text provider
+
+Set `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://host.docker.internal:11434`,
+and `OLLAMA_MODEL=qwen3:4b` for the Docker Desktop topology. Install Ollama on
+the host, run `ollama pull qwen3:4b`, and confirm `/api/v1/readiness` reports the
+configured model as ready. Direct host processes should use
+`OLLAMA_BASE_URL=http://127.0.0.1:11434`. The worker and backend may reach that
+endpoint; the sandbox runner does not receive this configuration and launches
+untrusted payloads with networking disabled.
+
+Ollama supplies only planning, tool selection, and evidence-aware synthesis.
+Gemini remains the optional hosted text provider and the configured provider for
+genuine image vision and audio transcription. Provider selection never fails
+over automatically. Ollama does not supply embeddings in this release; semantic
+retrieval truthfully reports unavailable when no compatible embedding provider
+exists, while lexical PostgreSQL retrieval continues to operate.
