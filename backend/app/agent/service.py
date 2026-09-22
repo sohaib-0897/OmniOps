@@ -419,8 +419,8 @@ class InvestigationRuntime:
         ))).scalars().all()
         return {
             "executive_summary": proposal.executive_summary,
-            "key_findings": [item for item in proposal.key_findings
-                             if not item.get("claim_id") or item.get("claim_id") in verified_codes],
+            "key_findings": [item.model_dump() for item in proposal.key_findings
+                             if not item.claim_id or item.claim_id in verified_codes],
             "claims": report_claims, "inferences": report_inferences,
             "recommendations": report_recommendations, "rejected_proposals": rejected,
             "missing_data_warnings": proposal.missing_data_warnings,

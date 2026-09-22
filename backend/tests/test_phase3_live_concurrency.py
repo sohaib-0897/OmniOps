@@ -13,24 +13,31 @@ from app.models.investigation import InvestigationSession, RuntimeState
 from app.models.document import SourceDocument
 from app.models.evidence import EvidenceItem, CalculationRecord, VerifiedClaim, RuntimeEvent
 from app.agent.runtime import claim_next_investigation, acquire_lease, renew_lease, logical_identity, persist_runtime_event
+from conftest import ensure_postgres_tenant
 
 PG_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not PG_URL, reason="POSTGRES_TEST_DATABASE_URL is required for live concurrency verification")
 
 
 @pytest_asyncio.fixture
-async def pg_factory():
-    engine = create_async_engine(PG_URL, pool_size=10, max_overflow=0)
+async def pg_factory(postgres_schema):
+    engine = create_async_engine(postgres_schema, pool_size=10, max_overflow=0)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
     await engine.dispose()
 
 
+@pytest_asyncio.fixture
+async def tenant(pg_factory):
+    """Own the User/Workspace this suite operates on; never inherit another module's."""
+    return await ensure_postgres_tenant(pg_factory)
+
+
 @pytest.mark.asyncio
-async def test_live_worker_race_and_lease_takeover(pg_factory):
+async def test_live_worker_race_and_lease_takeover(pg_factory, tenant):
     async with pg_factory() as db:
-        user = (await db.execute(select(User).limit(1))).scalar_one()
-        ws = (await db.execute(select(Workspace).limit(1))).scalar_one()
+        user = (await db.execute(select(User).where(User.id == tenant[0]))).scalar_one()
+        ws = (await db.execute(select(Workspace).where(Workspace.id == tenant[1]))).scalar_one()
         # Isolate the race: leave exactly one eligible row in the test DB.
         await db.execute(update(InvestigationSession).where(
             InvestigationSession.current_state.in_([RuntimeState.READY.value, RuntimeState.EXECUTING.value, RuntimeState.REPLANNING.value])
@@ -63,9 +70,9 @@ async def test_live_worker_race_and_lease_takeover(pg_factory):
 
 
 @pytest.mark.asyncio
-async def test_live_concurrent_event_idempotency(pg_factory):
+async def test_live_concurrent_event_idempotency(pg_factory, tenant):
     async with pg_factory() as db:
-        user = (await db.execute(select(User).limit(1))).scalar_one(); ws = (await db.execute(select(Workspace).limit(1))).scalar_one()
+        user = (await db.execute(select(User).where(User.id == tenant[0]))).scalar_one(); ws = (await db.execute(select(Workspace).where(Workspace.id == tenant[1]))).scalar_one()
         inv = InvestigationSession(workspace_id=ws.id, user_id=user.id, objective="event race", current_state=RuntimeState.READY.value)
         db.add(inv); await db.commit(); inv_id = inv.id
     identity = logical_identity(inv_id, "event", "same")

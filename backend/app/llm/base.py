@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 class PlannedTask(BaseModel):
     id: str = Field(min_length=1, max_length=100)
@@ -19,6 +19,20 @@ class ToolDecision(BaseModel):
     arguments: Dict[str, Any]
     user_activity_summary: str
     thought_process: Optional[str] = None
+
+class KeyFinding(BaseModel):
+    """Canonical executive key-finding contract shared with the frontend.
+
+    ``detail`` is required so the JSON schema handed to a structured provider
+    constrains the field name; an unconstrained provider that answers with
+    ``statement``/``summary`` is normalized to the same canonical shape.
+    """
+    title: str
+    detail: str = Field(validation_alias=AliasChoices("detail", "statement", "summary"))
+    claim_id: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
 
 class EpistemicClaim(BaseModel):
     claim_id: str
@@ -45,7 +59,7 @@ class InferenceItem(BaseModel):
 
 class SynthesisReport(BaseModel):
     executive_summary: str
-    key_findings: List[Dict[str, Any]]
+    key_findings: List[KeyFinding]
     claims: List[EpistemicClaim]
     inferences: List[InferenceItem] = Field(default_factory=list)
     recommendations: List[RecommendationItem]

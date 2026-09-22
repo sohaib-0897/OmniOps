@@ -13,7 +13,9 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Typ
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session as SyncSession
 from sqlalchemy import update, select, func
 
 from app.models.investigation import (
@@ -384,6 +386,52 @@ def logical_identity(*parts: Any) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
 
 
+PENDING_RUNTIME_EVENTS = "pending_runtime_events"
+
+
+@dataclass(frozen=True)
+class RuntimeEventNotice:
+    """Transaction-independent snapshot of a persisted runtime event.
+
+    Publication happens *after* commit, and a commit (or the rollback taken on
+    the failure path) expires every ORM instance bound to the session. Reading
+    an expired attribute would trigger a lazy refresh -- synchronous IO inside
+    the async publish loop -- so the scalar values are captured here, while the
+    instance is still loaded, and the publisher never touches the ORM again.
+    """
+    investigation_id: str
+    event_id: str
+    event_type: str
+    entity_id: Optional[str]
+    payload: Dict[str, Any]
+
+    @classmethod
+    def of(cls, event: RuntimeEvent) -> "RuntimeEventNotice":
+        return cls(
+            investigation_id=str(event.investigation_id),
+            event_id=str(event.id),
+            event_type=event.event_type,
+            entity_id=str(event.entity_id) if event.entity_id else None,
+            payload=dict(event.payload or {}),
+        )
+
+
+def _queue_runtime_event_notice(session: AsyncSession, event: RuntimeEvent) -> None:
+    session.info.setdefault(PENDING_RUNTIME_EVENTS, {})[str(event.id)] = RuntimeEventNotice.of(event)
+
+
+@sa_event.listens_for(SyncSession, "after_soft_rollback")
+def _discard_rolled_back_runtime_events(session: SyncSession, previous_transaction: Any) -> None:
+    """Rolled-back events were never committed, so they must never publish.
+
+    Clearing transaction-local pending state here is what keeps the failure
+    path honest: ``fail_investigation`` rolls back a partially applied
+    transaction before persisting the explicit failure, and only the events
+    written after that rollback may be announced.
+    """
+    session.info.pop(PENDING_RUNTIME_EVENTS, None)
+
+
 async def persist_runtime_event(session: AsyncSession, investigation_id: UUID, event_type: str, identity: str, payload: Optional[Dict[str, Any]] = None, entity_id: Optional[UUID] = None) -> RuntimeEvent:
     existing = (await session.execute(select(RuntimeEvent).where(RuntimeEvent.logical_identity == identity))).scalar_one_or_none()
     if existing:
@@ -399,12 +447,12 @@ async def persist_runtime_event(session: AsyncSession, investigation_id: UUID, e
         ).on_conflict_do_nothing(index_elements=[RuntimeEvent.logical_identity])
         await session.execute(stmt)
         event = (await session.execute(select(RuntimeEvent).where(RuntimeEvent.logical_identity == identity))).scalar_one()
-        session.info.setdefault("pending_runtime_events", {})[str(event.id)] = event
+        _queue_runtime_event_notice(session, event)
         return event
     event = RuntimeEvent(investigation_id=investigation_id, event_type=event_type, logical_identity=identity, entity_id=entity_id, payload=payload or {})
     session.add(event)
     await session.flush()
-    session.info.setdefault("pending_runtime_events", {})[str(event.id)] = event
+    _queue_runtime_event_notice(session, event)
     return event
 
 
@@ -450,16 +498,16 @@ async def publish_persisted_runtime_events(session: AsyncSession) -> None:
     after commit by service/API boundaries and publishes the persisted event
     identity rather than constructing a transport-only lifecycle message.
     """
-    pending = session.info.pop("pending_runtime_events", {})
+    pending = session.info.pop(PENDING_RUNTIME_EVENTS, {})
     if not pending:
         return
     from app.agent.sse_manager import sse_manager
-    for event in pending.values():
-        await sse_manager.emit(str(event.investigation_id), event.event_type, {
-            "event_id": str(event.id),
-            "event_type": event.event_type,
-            "entity_id": str(event.entity_id) if event.entity_id else None,
-            "payload": event.payload or {},
+    for notice in pending.values():
+        await sse_manager.emit(notice.investigation_id, notice.event_type, {
+            "event_id": notice.event_id,
+            "event_type": notice.event_type,
+            "entity_id": notice.entity_id,
+            "payload": notice.payload,
         })
 
 
@@ -580,8 +628,12 @@ class DurablePlanExecutor:
                 raise ValueError(RuntimeErrorCode.PLAN_CYCLE.value)
             for spec in runnable:
                 definition = self.registry.get(spec.tool_name)
+                db_step = persisted_steps[spec.step_id]
                 statuses[spec.step_id] = "RUNNING"
-                decision = await self._execute_step(investigation, persisted_steps[spec.step_id], spec, definition, context, outputs, statuses)
+                # The persisted step row mirrors the in-memory scheduler state
+                # so a resumed or inspected plan reports the same lifecycle.
+                db_step.status = "RUNNING"
+                decision = await self._execute_step(investigation, db_step, spec, definition, context, outputs, statuses)
                 await transition(self.db, investigation, RuntimeState.OBSERVING, "tool_observed")
                 reflection = reflect_on_observation(
                     decision=decision,
@@ -597,6 +649,8 @@ class DurablePlanExecutor:
                 await transition(self.db, investigation, RuntimeState.VERIFYING, "deterministic_checks")
                 await transition(self.db, investigation, RuntimeState.EXECUTING, "step_verified")
                 statuses[spec.step_id] = "COMPLETED"
+                db_step.status = "COMPLETED"
+                await self.db.flush()
                 calls += 1
         await transition(self.db, investigation, RuntimeState.VERIFYING, "all_steps_complete")
         await transition(self.db, investigation, RuntimeState.SYNTHESIZING, "verified_outputs")

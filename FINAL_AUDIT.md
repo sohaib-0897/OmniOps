@@ -262,3 +262,113 @@ This section records new verification without rewriting the historical audit res
 - **Evidence integrity:** All three factual claims cite the persisted evidence derived from the uploaded source; no calculations or fabricated fallbacks were used.
 - **Explicit failure proof:** With the Ollama endpoint deliberately unavailable, investigation `7f801ead-4c87-4b4d-bb2a-8515e8339c18` reached `failed` with `PROVIDER_UNAVAILABLE`, persisted no report, emitted the failure event, and released its lease.
 - **Fresh regression:** Backend `214 passed, 0 failed, 0 skipped`; benchmark evals `15/15`; frontend TypeScript, lint, and production build passed; development, production, and Ubuntu Compose configurations validated.
+
+---
+
+## Post-v1.0.0 Closure Round 2 — Live Defect Remediation (2026-09-22)
+
+Appended without altering any finding above. This round remediated four defects that the
+previous live verification surfaced, then re-proved the result against the deployed stack.
+
+### Environment
+
+- Deployment: `docker-compose.ubuntu.yml` (project `omniops-ubuntu`), backend + durable worker
+  rebuilt from source and recreated at `2026-09-22T15:06:19Z`, image `sha256:d5f5c1cc…`.
+- Provider: `LLM_PROVIDER=ollama`, Ollama `0.34.2`, model `qwen3:4b`, reached by the worker at
+  `http://host.docker.internal:11434`. `GEMINI_API_KEY` remained present throughout (multimodal
+  capabilities depend on it), which makes the no-fallback proof below stronger, not weaker.
+- Configuration note: the deployment had been resolving `LLM_PROVIDER=gemini` from a persisted
+  Windows **User** environment variable, which Compose interpolation prefers over `--env-file`.
+  `.env.ubuntu.local` contained no `LLM_PROVIDER` entry. Recorded because the file looked correct
+  while the running system disagreed.
+
+### Defects fixed
+
+1. **Key-finding schema contract.** `SynthesisReport.key_findings` was `List[Dict[str, Any]]`, so
+   the schema handed to the provider constrained nothing; `qwen3:4b` emitted `statement` while the
+   frontend renders `detail`, producing headings with empty bodies. Now a typed `KeyFinding`
+   (`title`, required `detail`, optional `claim_id`); the provider-facing JSON schema requires
+   `detail`. Legacy `statement`/`summary` is normalized on ingest and in the frontend for reports
+   persisted before the fix.
+2. **Failed-investigation worker crash.** `persist_runtime_event` queued ORM instances in
+   `Session.info`; the rollback in `fail_investigation` expired them, and publication then
+   triggered a lazy refresh inside the async publish loop, raising `MissingGreenlet` and
+   terminating `python -m app.worker`. The prior closure section above recorded this root cause as
+   corrected; live testing showed it was not — the deployed worker was still dying on every failed
+   investigation (observed at `02:14:08Z` and `02:15:05Z` on 2026-09-22). Now fixed at the
+   lifecycle level: a frozen `RuntimeEventNotice` DTO captures scalar event identity at persist
+   time, and an `after_soft_rollback` listener clears transaction-local pending state so
+   rolled-back events can never publish. A bounded, logged guard in the worker poll loop is
+   defence-in-depth behind that fix, not a substitute for it.
+3. **Plan-step terminal status.** The executor mirrored only the FAILED outcome into
+   `agent_plan_steps.status`, leaving successful steps `PENDING` after completion. Successful steps
+   now reach `COMPLETED` using the existing status vocabulary. (`agent_plans` has no `status`
+   column; the defect was on the step rows.)
+4. **PostgreSQL test-order dependence.** The Phase 3 suites created no schema and read whichever
+   tenant another module's fixture had seeded, so a fresh database failed six tests on its first
+   run. `conftest.py` now provides order-independent `postgres_schema` provisioning and
+   `ensure_postgres_tenant`. No assertion was weakened.
+
+Regression tests added: `test_key_finding_contract.py`, `test_runtime_event_publication.py`,
+`test_plan_step_lifecycle.py`. The event-publication tests were confirmed to be genuine
+reproductions — four of five fail against the pre-fix code.
+
+### Live evidence
+
+| Check | Result |
+|---|---|
+| Successful E2E (Test A) | `ab0d6688-2669-497f-aef3-daab9d420fd0` — `completed`, 38.3 s |
+| Failure-path E2E (Test B) | `0604b2bf-498a-4577-a671-5976b9e97f01` — `failed`, `PROVIDER_UNAVAILABLE`, 2.5 s |
+| Post-failure E2E (Test C) | `302ab499-c8aa-45db-a637-bbf23fa1f495` — `completed`, 35.2 s |
+
+- **Test A / Test C:** plan v1 persisted, plan step `COMPLETED`, `hybrid_document_search` attempt
+  `COMPLETED`, one evidence item, three claims all `VERIFIED`, citations resolving
+  claim → evidence → chunk → source with the exact quote present in the chunk, zero calculation
+  records, 19 persisted runtime events ending in `investigation.completed`, final report persisted,
+  lease released. Synthesis provenance `{"provider": "OllamaProvider", "state": "AVAILABLE"}`.
+- **Key findings:** both new reports carry three findings with non-empty `title` and non-empty
+  `detail` and no `statement` key. Rendering the real `ExecutiveReportView` through the real
+  `normalizeFinalResponse` with the real public-API payload produced every heading and body, with
+  zero empty body paragraphs.
+- **Test B:** no final report, no evidence, no claims, no calculations, `investigation.failed`
+  persisted and delivered over SSE, no `investigation.completed` event, lease released.
+- **No fallback:** with Ollama stopped and `GEMINI_API_KEY` present, provider readiness returned
+  `{"status": "unavailable", "provider": "ollama", "code": "PROVIDER_UNAVAILABLE"}` and backend
+  readiness returned HTTP 503 still naming `ollama`. Zero occurrences of `gemini` in worker logs.
+
+### Worker survival
+
+| Measure | Before Test B | After Tests B and C |
+|---|---|---|
+| Container PID | 68363 | 68363 |
+| In-container PID 1 start | 1790089579 | 1790089579 |
+| Restart count | 0 | 0 |
+
+The complete worker log across all three live investigations is two lines — the provider's own
+normalized error reporting from Test B. Explicit scan returned **0** occurrences of
+`MissingGreenlet`, `DetachedInstanceError`, `greenlet_spawn`, `await_only`, `sqlalchemy.exc`,
+`Traceback`, and `publish_persisted_runtime_events`. The outer worker catch-and-continue guard
+fired **0** times, which is what distinguishes the underlying lifecycle fix from a masked
+exception.
+
+### Regression
+
+- Backend, **first run against a brand-new empty PostgreSQL database**: `227 passed, 0 failed,
+  0 skipped` (62.98 s). Previously 214 passed with 12 PostgreSQL tests skipped.
+- Benchmark evals: `15/15`.
+- Frontend: TypeScript `PASS`, lint `PASS` (no warnings or errors), production build `PASS`.
+- Compose validation `PASS` for base, `+dev`, `+local`, production, and Ubuntu topologies. The
+  default `docker-compose.yml` pinned a stale pre-built backend tag whose Alembic tree predated
+  `20260911_phase6_sessions`, so it crash-looped permanently; the pin was removed and the stack now
+  starts clean with `0` restarts and a ready readiness probe.
+
+### Truthful limitations
+
+- **The Gemini hosted-provider E2E remains unverified and is separate from this Ollama proof.** No
+  Gemini investigation was executed in this round. Gemini support is present and selectable, and a
+  Gemini key was configured, but no claim of a passing Gemini E2E is made here.
+- Semantic embedding remains `EMBEDDING_PROVIDER_UNAVAILABLE`; retrieval in these runs was
+  PostgreSQL lexical only. The Phase 2 semantic evaluation stays `BLOCKED`.
+- Model-output observation, not a defect: `qwen3:4b` emitted the evidence UUID as `claim_id_code`
+  for all three claims rather than distinct `claim_NNN` codes, so those codes collide within an
+  investigation. Citations and lineage still resolve correctly.

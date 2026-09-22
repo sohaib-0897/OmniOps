@@ -20,6 +20,7 @@ from app.models.document import DocumentChunk, SourceDocument
 from app.models.evidence import EvidenceItem, CalculationRecord, VerifiedClaim, RuntimeEvent
 from app.models.investigation import AgentObservation, AgentPlan, AgentPlanStep, AgentToolAttempt, InvestigationSession, RuntimeState
 from app.models.user import User, Workspace
+from conftest import ensure_postgres_tenant
 
 PG_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not PG_URL, reason="POSTGRES_TEST_DATABASE_URL is required")
@@ -30,17 +31,18 @@ class EmptyInput(BaseModel):
 
 
 @pytest_asyncio.fixture
-async def pg_factory():
-    engine = create_async_engine(PG_URL, pool_size=8, max_overflow=0)
+async def pg_factory(postgres_schema):
+    engine = create_async_engine(postgres_schema, pool_size=8, max_overflow=0)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
     await engine.dispose()
 
 
 async def _fixture_ids(factory):
+    user_id, workspace_id = await ensure_postgres_tenant(factory)
     async with factory() as db:
-        user = (await db.execute(select(User).limit(1))).scalar_one()
-        workspace = (await db.execute(select(Workspace).where(Workspace.created_by == user.id).limit(1))).scalar_one()
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+        workspace = (await db.execute(select(Workspace).where(Workspace.id == workspace_id))).scalar_one()
         await db.execute(update(InvestigationSession).where(
             InvestigationSession.current_state.in_([RuntimeState.READY.value, RuntimeState.EXECUTING.value, RuntimeState.REPLANNING.value])
         ).values(current_state=RuntimeState.COMPLETED.value, worker_id=None, lease_expires_at=None))

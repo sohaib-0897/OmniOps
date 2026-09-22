@@ -189,7 +189,7 @@ export interface InvestigationSession {
   failure_message?: string;
   final_response?: {
     executive_summary: string;
-    key_findings: Array<{ title: string; detail: string; claim_id?: string }>;
+    key_findings: KeyFinding[];
     claims: EpistemicClaim[];
     inferences: Inference[];
     recommendations: Recommendation[];
@@ -202,6 +202,16 @@ export interface InvestigationSession {
   created_at: string;
   completed_at?: string;
   steps?: AgentStep[];
+}
+
+/**
+ * Canonical key-finding contract. Mirrors backend `KeyFinding`
+ * (app/llm/base.py): `detail` is the body text, never `statement`.
+ */
+export interface KeyFinding {
+  title: string;
+  detail: string;
+  claim_id?: string | null;
 }
 
 export interface EvidenceItem {

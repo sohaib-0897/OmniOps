@@ -103,3 +103,113 @@ async def auth_headers(test_user: User, db_session: AsyncSession) -> dict:
     db_session.add(session); await db_session.commit()
     token = create_access_token(subject=test_user.id, session_id=session.id)
     return {"Authorization": f"Bearer {token}"}
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL integration provisioning
+#
+# Every PostgreSQL suite provisions its own schema through this helper so a
+# fresh, dedicated test database is green on its FIRST run. No module may rely
+# on another module's fixture having executed first.
+# ---------------------------------------------------------------------------
+
+POSTGRES_TEST_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
+
+
+def require_postgres_test_database() -> str:
+    """Return the configured integration URL, refusing a non-dedicated database."""
+    assert POSTGRES_TEST_URL
+    database_name = POSTGRES_TEST_URL.rsplit("/", 1)[-1].split("?", 1)[0]
+    if "test" not in database_name.lower():
+        pytest.fail(
+            "POSTGRES_TEST_DATABASE_URL must point to a dedicated database whose name contains 'test'."
+        )
+    return POSTGRES_TEST_URL
+
+
+def run_migrations_to_head(url: str) -> None:
+    """Apply the Alembic head to the integration database."""
+    import subprocess
+
+    result = subprocess.run(
+        ["alembic", "-c", "alembic.ini", "upgrade", "head"],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "DATABASE_URL": url, "ENVIRONMENT": "test"},
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+async def ensure_postgres_schema(url: str) -> None:
+    """Migrate the integration database unless it is already at head.
+
+    Idempotent and order-independent: it is safe to call from every fixture,
+    including after another suite has dropped and recreated ``public``.
+    """
+    from sqlalchemy import text
+
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as connection:
+            present = (
+                await connection.execute(text("SELECT to_regclass('public.users')"))
+            ).scalar()
+            revision = None
+            if present is not None:
+                revision = (
+                    await connection.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    )
+                ).scalar()
+    finally:
+        await engine.dispose()
+    if present is not None and revision:
+        return
+    run_migrations_to_head(url)
+
+
+@pytest_asyncio.fixture
+async def postgres_schema() -> str:
+    """Provision the integration schema and yield its URL."""
+    url = require_postgres_test_database()
+    await ensure_postgres_schema(url)
+    return url
+
+
+async def ensure_postgres_tenant(factory):
+    """Get-or-create the owning User/Workspace a PostgreSQL suite operates on.
+
+    Suites previously read whichever tenant another module's fixture happened
+    to have seeded, which made them order-dependent and made a fresh database
+    fail on its first run. Each suite now guarantees its own tenant.
+    """
+    from uuid import uuid4
+
+    from sqlalchemy import select
+
+    from app.models.user import User, Workspace
+
+    async with factory() as db:
+        user = (await db.execute(select(User).limit(1))).scalar_one_or_none()
+        if user is None:
+            user = User(
+                email=f"pg-suite-{uuid4()}@example.com",
+                hashed_password="not-a-login-credential",
+                full_name="PostgreSQL Suite",
+            )
+            db.add(user)
+            await db.flush()
+        workspace = (
+            await db.execute(
+                select(Workspace).where(Workspace.created_by == user.id).limit(1)
+            )
+        ).scalar_one_or_none()
+        if workspace is None:
+            workspace = Workspace(name="PostgreSQL Suite Workspace", created_by=user.id)
+            db.add(workspace)
+            await db.flush()
+        user_id, workspace_id = user.id, workspace.id
+        await db.commit()
+        return user_id, workspace_id

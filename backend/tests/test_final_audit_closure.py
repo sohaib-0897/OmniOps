@@ -57,7 +57,7 @@ class FakeProviderClient:
         evidence_id = evidence_items[0]["id"]
         return SynthesisReport(
             executive_summary="Revenue was 42 million.",
-            key_findings=[{"claim_id": "CLM-001", "detail": "42 million"}],
+            key_findings=[{"title": "Audited revenue", "detail": "42 million", "claim_id": "CLM-001"}],
             claims=[EpistemicClaim(
                 claim_id="CLM-001", statement="Revenue was 42 million.",
                 epistemic_type="fact", confidence_score=0.9,
@@ -119,6 +119,10 @@ async def test_default_runtime_uses_provider_plan_tools_and_grounded_synthesis(
     assert investigation.current_state == RuntimeState.COMPLETED.value
     assert investigation.final_response["claims"][0]["verification_status"] == "VERIFIED"
     assert claim.verification_status == "VERIFIED"
+    # The persisted report must carry the canonical frontend key-finding shape.
+    finding = investigation.final_response["key_findings"][0]
+    assert set(finding) == {"title", "detail", "claim_id"}
+    assert finding["detail"] == "42 million"
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { AgentStep, InvestigationSession } from "@/types/api";
+import { AgentStep, InvestigationSession, KeyFinding } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
 
 export interface InvestigationStreamState {
@@ -167,6 +167,25 @@ function eventData(event: MessageEvent): Record<string, any> {
   };
 }
 
+/**
+ * Reports are generated against the canonical backend `KeyFinding` contract
+ * (`title`/`detail`/`claim_id`). Reports persisted before that contract was
+ * enforced can carry the body under `statement` or `summary`; map those onto
+ * `detail` so historical investigations still render a finding body.
+ */
+function normalizeKeyFinding(value: unknown): KeyFinding {
+  const finding = (value ?? {}) as Record<string, unknown>;
+  const body = [finding.detail, finding.statement, finding.summary].find(
+    (candidate): candidate is string =>
+      typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  return {
+    title: typeof finding.title === "string" ? finding.title : "",
+    detail: body ?? "",
+    claim_id: typeof finding.claim_id === "string" ? finding.claim_id : null,
+  };
+}
+
 export function normalizeFinalResponse(
   value: InvestigationSession["final_response"] | null | undefined,
 ): InvestigationStreamState["finalResponse"] {
@@ -178,7 +197,7 @@ export function normalizeFinalResponse(
         ? report.executive_summary
         : "The investigation completed without a narrative summary.",
     key_findings: Array.isArray(report?.key_findings)
-      ? report.key_findings
+      ? report.key_findings.map(normalizeKeyFinding)
       : [],
     claims: Array.isArray(report?.claims)
       ? report.claims.map((claim) => ({
