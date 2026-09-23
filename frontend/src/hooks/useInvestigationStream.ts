@@ -37,6 +37,7 @@ export interface InvestigationStreamState {
   }>;
   finalResponse: InvestigationSession["final_response"] | null;
   errorMessage: string | null;
+  failureCode: string | null;
   timeline: RuntimeTimelineEvent[];
 }
 
@@ -57,6 +58,7 @@ const initialState: InvestigationStreamState = {
   evidenceDiscovered: [],
   finalResponse: null,
   errorMessage: null,
+  failureCode: null,
   timeline: [],
 };
 
@@ -322,7 +324,9 @@ export function useInvestigationStream(investigationId: string | null) {
               session.status === "completed"
                 ? "Investigation completed. Report synthesized."
                 : session.status === "failed"
-                  ? session.error_message || "Investigation failed."
+                  ? session.failure_message ||
+                    session.error_message ||
+                    "Investigation failed."
                   : "Investigation cancelled.",
             finalResponse:
               normalizeFinalResponse(session.final_response) ||
@@ -332,16 +336,18 @@ export function useInvestigationStream(investigationId: string | null) {
                 ? mergeSteps(prev.steps, session.steps)
                 : prev.steps,
             errorMessage:
+              session.failure_message ||
               session.error_message ||
               (prev.errorMessage === resolvedSyncError
                 ? null
                 : prev.errorMessage),
+            failureCode: session.failure_code || prev.failureCode,
           }));
           return true;
         } else {
           setState((prev) => ({
             ...prev,
-            status: session.status as any,
+            status: (session.current_state || session.status) as any,
             objective: session.objective,
             errorMessage:
               prev.errorMessage === resolvedSyncError
@@ -456,6 +462,30 @@ export function useInvestigationStream(investigationId: string | null) {
         try {
           const data = JSON.parse(event.data);
           addTimelineEvent(eventType, data);
+          const payload =
+            data.payload && typeof data.payload === "object"
+              ? data.payload
+              : data;
+          if (eventType === "investigation.failed") {
+            setState((prev) => ({
+              ...prev,
+              status: "failed",
+              failureCode:
+                typeof payload.code === "string"
+                  ? payload.code
+                  : prev.failureCode,
+              errorMessage:
+                prev.errorMessage || "The investigation could not be completed.",
+            }));
+          } else if (eventType === "investigation.cancelled") {
+            setState((prev) => ({
+              ...prev,
+              status: "cancelled",
+              activitySummary: "Investigation cancelled.",
+            }));
+          } else if (eventType === "investigation.completed") {
+            void fetchSession();
+          }
         } catch {
           /* ignore malformed transport frames */
         }
@@ -623,6 +653,10 @@ export function useInvestigationStream(investigationId: string | null) {
       setState((prev) => ({
         ...prev,
         status: "failed",
+        failureCode:
+          typeof (data.code || data.failure_code) === "string"
+            ? data.code || data.failure_code
+            : prev.failureCode,
         errorMessage: normalizeStreamError(
           data.error ?? data.error_message,
         ),

@@ -78,6 +78,7 @@ export function SourcePreviewModal({
       onClose={onClose}
       title={file?.file_name || "Source preview"}
       description="Extracted content and recorded source locations"
+      drawer
     >
       <div className="space-y-4">
         {file && (

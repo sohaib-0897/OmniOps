@@ -56,12 +56,18 @@ export function ExecutiveReportView({
   const citations = [
     ...new Set(report.claims.flatMap((claim) => claim.citations)),
   ];
+  const citationNumbers = new Map(
+    citations.map((citation, index) => [citation, index + 1]),
+  );
+  const calculationClaims = report.claims.filter(
+    (claim) =>
+      claim.epistemic_type === "calculation" || claim.calculation_ids.length > 0,
+  );
   return (
-    <div className="space-y-6">
-      <section id="summary" className="surface p-5">
+    <div className="report-stack">
+      <section id="summary" className="report-section">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="eyebrow">Final synthesis</p>
             <h2 className="mt-2 text-lg font-semibold tracking-tight">
               Executive summary
             </h2>
@@ -132,7 +138,7 @@ export function ExecutiveReportView({
             No supported claims were produced. Review the limitations below.
           </p>
         ) : (
-          <div className="divide-y divide-zinc-800 rounded-lg border border-zinc-800">
+          <div className="divide-y divide-zinc-800">
             {report.claims.map((claim) => {
               const Icon =
                 claim.epistemic_type === "calculation"
@@ -145,7 +151,7 @@ export function ExecutiveReportView({
               return (
                 <article
                   key={claim.claim_id}
-                  className="bg-[#121315] p-4 first:rounded-t-lg last:rounded-b-lg"
+                  className="claim-row"
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <Icon className="h-4 w-4 text-zinc-400" />
@@ -187,7 +193,7 @@ export function ExecutiveReportView({
                   ) : null}
                   {claim.citations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {claim.citations.map((citation, index) => (
+                      {claim.citations.map((citation) => (
                         <button
                           className="citation"
                           key={citation}
@@ -195,7 +201,7 @@ export function ExecutiveReportView({
                           aria-label={`Inspect citation ${citation}`}
                           onClick={() => onInspectCitation(citation)}
                         >
-                          Source {index + 1}
+                          [{citationNumbers.get(citation)}]
                           <ArrowUpRight className="h-3 w-3" />
                         </button>
                       ))}
@@ -207,6 +213,32 @@ export function ExecutiveReportView({
           </div>
         )}
       </section>
+      {calculationClaims.length > 0 && (
+        <section id="calculations">
+          <h2 className="section-title mb-3">Calculations</h2>
+          <div className="divide-y divide-zinc-800 border-y border-zinc-800">
+            {calculationClaims.map((claim) => (
+              <article key={claim.claim_id} className="py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Calculator className="h-4 w-4 text-zinc-400" />
+                  <span className="mono-copy">{claim.claim_id}</span>
+                  <StatusBadge status={claim.verification_status || "not_reported"} />
+                </div>
+                <p className="body-copy mt-2">{claim.statement}</p>
+                {claim.calculation_summary && (
+                  <pre className="mt-3 whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-[#0d0e10] p-3 text-xs leading-6 text-zinc-300">
+                    {claim.calculation_summary}
+                  </pre>
+                )}
+                <button className="btn-ghost mt-2 h-8 px-0" onClick={() => onInspectClaim(claim)}>
+                  Inspect calculation lineage
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       {report.contradictions?.length ? (
         <section className="rounded-md border border-amber-900/70 p-4">
           <h2 className="section-title flex items-center gap-2">
@@ -247,7 +279,7 @@ export function ExecutiveReportView({
             {report.recommendations.map((item) => (
               <article
                 key={item.recommendation_id || item.title}
-                className="surface-muted p-4"
+                className="report-section"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-medium">{item.title}</h3>
@@ -283,7 +315,7 @@ export function ExecutiveReportView({
         </section>
       )}
       {report.missing_data_warnings?.length ? (
-        <section className="surface-muted p-4">
+        <section className="report-section">
           <h2 className="section-title">Caveats and limitations</h2>
           <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-6 text-zinc-300">
             {report.missing_data_warnings.map((warning) => (
@@ -293,7 +325,7 @@ export function ExecutiveReportView({
         </section>
       ) : null}
       {report.rejected_proposals?.length > 0 && (
-        <details className="surface-muted p-4 text-xs text-zinc-400">
+        <details className="report-section text-xs text-zinc-400">
           <summary>
             {report.rejected_proposals.length} rejected proposals
           </summary>
@@ -323,7 +355,7 @@ export function ExecutiveReportView({
                 title={citation}
                 onClick={() => onInspectCitation(citation)}
               >
-                Reference {index + 1}
+                [{index + 1}] Reference
                 <ArrowUpRight className="h-3 w-3" />
               </button>
             ))}

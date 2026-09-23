@@ -21,11 +21,11 @@ interface Props {
   onRetry?: () => void;
 }
 const groups = [
+  "evidence",
+  "claim",
   "source",
   "extracted_content",
-  "evidence",
   "calculation",
-  "claim",
   "inference",
   "recommendation",
 ];
@@ -147,15 +147,13 @@ export function EvidenceLineageDrawer({
             description="This selection has no available provenance graph. No relationships have been inferred."
           />
         ) : (
-          groups.map((group, index) => {
+          groups.map((group) => {
             const items = nodes.filter((node) => category(node) === group);
+            if (items.length === 0) return null;
             return (
               <section key={group}>
-                <h3 className="eyebrow mb-3">
-                  <span className="mr-2 font-mono text-zinc-400">
-                    0{index + 1}
-                  </span>
-                  {group.replace(/_/g, " ")}
+                <h3 className="inspector-section-title capitalize">
+                  {group === "extracted_content" ? "Source context" : group.replace(/_/g, " ")}
                 </h3>
                 {items.length === 0 ? (
                   <p className="border-l border-zinc-800 pl-4 text-xs text-zinc-400">
@@ -168,11 +166,11 @@ export function EvidenceLineageDrawer({
                     return (
                       <article
                         key={node.id}
-                        className="mb-3 border-l border-zinc-600 pl-4"
+                        className="mb-6"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <h4 className="break-words text-xs font-medium">
-                            {node.type === "evidence" ? "Evidence excerpt" : node.type === "extracted_content" ? "Extracted content" : node.label}
+                            {node.type === "evidence" ? "Source excerpt" : node.type === "extracted_content" ? "Extracted content" : category(node) === "claim" ? String(node.data.claim_code || "Recorded claim") : node.label}
                           </h4>
                           {node.data.quote && (
                             <button
@@ -203,7 +201,7 @@ export function EvidenceLineageDrawer({
                         {(node.data.quote ||
                           node.data.content ||
                           node.data.statement) && (
-                          <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-zinc-300">
+                          <p className="evidence-excerpt mt-2 whitespace-pre-wrap break-words">
                             {node.data.quote ||
                               node.data.content ||
                               node.data.statement}
@@ -293,6 +291,7 @@ export function EvidenceLineageDrawer({
             );
           })
         )}
+        {!loading && !error && nodes.length > 0 && <details className="text-xs text-zinc-400"><summary>Lineage coverage</summary><p className="mt-3 leading-6">Only recorded relationships are shown. No linked record for: {groups.filter(group => !nodes.some(node => category(node) === group)).map(group => group.replace(/_/g, " ")).join(", ") || "none — all categories are present"}.</p></details>}
       </div>
     </Dialog>
   );

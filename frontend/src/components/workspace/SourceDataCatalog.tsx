@@ -35,6 +35,7 @@ export function SourceDataCatalog({
   onPreviewTable,
 }: Props) {
   const [search, setSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [status, setStatus] = useState("all");
   const [deleting, setDeleting] = useState<SourceDocument | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +80,8 @@ export function SourceDataCatalog({
         <span className="mono-copy">{files.length} {files.length === 1 ? "file" : "files"}</span>
       </div>
       {files.length > 0 && (
+        <details open={files.length > 5 || filtersOpen || Boolean(search) || status !== "all"} onToggle={(event) => setFiltersOpen(event.currentTarget.open)} className="text-xs text-zinc-400">
+          <summary className="mb-3">Search and filter sources</summary>
         <div className="space-y-2">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-3 h-3.5 w-3.5 text-zinc-400" />
@@ -87,14 +90,14 @@ export function SourceDataCatalog({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search sources"
-              className="field h-10 pl-9 text-xs"
+              className="field h-10 border-transparent bg-transparent pl-9 text-xs hover:border-zinc-700"
             />
           </label>
           <select
             aria-label="Filter source status"
             value={status}
             onChange={(event) => setStatus(event.target.value)}
-            className="field h-9 text-xs"
+            className="field h-9 border-transparent bg-transparent text-xs text-zinc-400 hover:border-zinc-700"
           >
             <option value="all">All processing states</option>
             <option value="ready">Ready</option>
@@ -104,13 +107,10 @@ export function SourceDataCatalog({
             <option value="failed">Failed</option>
           </select>
         </div>
+        </details>
       )}
       {files.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No sources yet"
-          description="Upload files above to give your investigation source material."
-        />
+        <p className="py-3 text-sm leading-6 text-zinc-400">Your source material will appear here. Attach a document, spreadsheet, image, or audio file to begin.</p>
       ) : visible.length === 0 ? (
         <EmptyState
           title="No matching sources"
@@ -139,7 +139,7 @@ export function SourceDataCatalog({
                     ? Table2
                     : FileText;
             return (
-              <article key={file.id} className="directory-row group rounded-lg px-2 py-4 hover:bg-zinc-800/40 focus-within:bg-zinc-800/40">
+              <article key={file.id} className="directory-row group rounded-md px-1 py-3 hover:bg-zinc-800/40 focus-within:bg-zinc-800/40">
                 <div className="flex items-start gap-2">
                   <Icon className="mt-1 h-4 w-4 shrink-0 text-zinc-400" />
                   <button
@@ -159,7 +159,7 @@ export function SourceDataCatalog({
                       setDeleting(file);
                       setError(null);
                     }}
-                    className="btn-icon h-7 w-7 hover:text-red-300"
+                    className="btn-icon h-7 w-7 text-zinc-500 hover:text-red-300 group-hover:text-zinc-300 focus-visible:text-zinc-300"
                     aria-label={`Remove ${file.file_name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -168,7 +168,7 @@ export function SourceDataCatalog({
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-6">
                   <StatusBadge status={file.processing_status} />
                   <time
-                    className="text-[11px] text-zinc-400"
+                    className="text-[11px] text-zinc-500"
                     title={new Date(file.created_at).toLocaleString()}
                   >
                     {formatDate(file.created_at)}

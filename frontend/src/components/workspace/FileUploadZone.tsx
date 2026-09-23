@@ -7,6 +7,7 @@ import { formatBytes } from "@/lib/utils";
 interface Props {
   workspaceId: string;
   onUploadComplete: () => void;
+  compact?: boolean;
 }
 interface Upload {
   name: string;
@@ -30,7 +31,7 @@ const ALLOWED = [
   ".jpeg",
   ".txt",
 ];
-export function FileUploadZone({ workspaceId, onUploadComplete }: Props) {
+export function FileUploadZone({ workspaceId, onUploadComplete, compact = false }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -115,16 +116,16 @@ export function FileUploadZone({ workspaceId, onUploadComplete }: Props) {
           setDragging(false);
           void upload(event.dataTransfer.files);
         }}
-        className={`flex w-full items-center gap-3 rounded-md border border-dashed p-4 text-left transition-colors ${dragging ? "border-zinc-200 bg-zinc-800" : "border-zinc-600 bg-[#121315] hover:border-zinc-400"}`}
+        className={`flex w-full items-center gap-3 rounded-md border border-dashed text-left transition-colors ${compact ? "px-3 py-2.5" : "p-4"} ${dragging ? "border-zinc-200 bg-zinc-800" : "border-zinc-700 hover:border-zinc-400"}`}
       >
         <FileUp className="h-5 w-5 shrink-0 text-zinc-300" />
         <span>
           <span className="block text-xs font-medium">
             {busy ? "Uploading sources" : "Drop files or browse"}
           </span>
-          <span className="mt-1 block text-[11px] leading-5 text-zinc-400">
+          {!compact && <span className="mt-1 block text-[11px] leading-5 text-zinc-400">
             Documents, tables, images, and audio
-          </span>
+          </span>}
         </span>
       </button>
       {queue.length > 0 && (
@@ -180,10 +181,14 @@ export function FileUploadZone({ workspaceId, onUploadComplete }: Props) {
           </div>
         </div>
       )}
-      <p className="text-[11px] leading-5 text-zinc-400">
+      <details className="text-[11px] leading-5 text-zinc-400" open={compact ? undefined : true}>
+        <summary className="text-zinc-400">Supported files and processing</summary>
+        <p className="mt-2">Documents, tables, images, and audio. Up to 50 MB per file.</p>
+        <p className="mt-1">
         Processing and extraction status appear in Sources. Upload acceptance
         does not mean extraction is complete.
-      </p>
+        </p>
+      </details>
     </section>
   );
 }
