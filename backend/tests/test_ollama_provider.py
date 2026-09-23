@@ -10,6 +10,7 @@ from app.llm.base import PlanOutput, PlannedTask, ProviderError, ProviderState, 
 from app.llm.client import OmniOpsLLMClient
 from app.llm.gemini_provider import GeminiProvider
 from app.llm.ollama_provider import OllamaProvider
+from app.llm.openai_provider import OpenAIProvider
 
 
 class FakeResponse:
@@ -154,6 +155,15 @@ def test_provider_selection_is_explicit_and_has_no_fallback(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "configured-test-key")
     assert isinstance(OmniOpsLLMClient()._provider, GeminiProvider)
 
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "configured-test-key")
+    assert isinstance(OmniOpsLLMClient()._provider, OpenAIProvider)
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "")
+    with pytest.raises(ProviderError) as raised:
+        OmniOpsLLMClient()
+    assert raised.value.code == "LLM_PROVIDER_REQUIRED"
+
     monkeypatch.setattr(settings, "LLM_PROVIDER", "auto")
     with pytest.raises(ProviderError) as raised:
         OmniOpsLLMClient()
@@ -198,6 +208,14 @@ async def test_gemini_failure_does_not_fall_back_to_ollama(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_readiness_endpoint_reports_provider_failure(client, monkeypatch):
+    # ``settings`` is instantiated during test collection, so patch the
+    # existing singleton rather than mutating an environment variable that the
+    # application will not re-read. The endpoint must reach readiness on an
+    # explicitly configured provider, not the no-provider failure path.
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(settings, "OLLAMA_BASE_URL", "http://ollama:11434")
+    monkeypatch.setattr(settings, "OLLAMA_MODEL", "missing-model")
+
     async def unavailable(_self):
         return {
             "status": "unavailable",
@@ -210,6 +228,7 @@ async def test_readiness_endpoint_reports_provider_failure(client, monkeypatch):
     response = await client.get("/api/v1/readiness")
     assert response.status_code == 503
     provider = response.json()["data"]["checks"]["llm_provider"]
+    assert provider["provider"] == "ollama"
     assert provider["code"] == "PROVIDER_MODEL_UNAVAILABLE"
 
 

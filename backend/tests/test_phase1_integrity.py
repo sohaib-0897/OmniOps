@@ -4,6 +4,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.evidence.validator import validate_claim_proposal, validate_supporting_claims
 from app.evidence.calculation_identity import calculation_reproducibility_hash
 from app.ingestion.audio_parser import parse_audio_recording
@@ -97,6 +98,11 @@ async def test_unsupported_recommendation_is_rejected(db_session: AsyncSession, 
 
 @pytest.mark.asyncio
 async def test_provider_failure_has_explicit_state(monkeypatch):
+    # This historical test verifies facade-level timeout normalization. It
+    # originally exercised the offline analytical provider, which must now be
+    # selected explicitly and only in a development/test environment.
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "analytical")
     client = OmniOpsLLMClient()
     async def fail(*args):
         raise TimeoutError("provider timed out")
