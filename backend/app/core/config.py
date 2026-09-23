@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"
     OLLAMA_MODEL: str = "qwen3:4b"
     OLLAMA_TIMEOUT_SECONDS: float = 90.0
+    # Sent explicitly as options.num_ctx; the server default (4096) is smaller
+    # than a multi-chunk synthesis prompt plus the embedded output schema.
+    OLLAMA_NUM_CTX: int = 8192
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o"
     GEMINI_API_KEY: Optional[str] = None

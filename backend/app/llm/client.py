@@ -38,6 +38,7 @@ class OmniOpsLLMClient(BaseLLMClient):
                 base_url=settings.OLLAMA_BASE_URL,
                 model=settings.OLLAMA_MODEL,
                 timeout_seconds=settings.OLLAMA_TIMEOUT_SECONDS,
+                num_ctx=settings.OLLAMA_NUM_CTX,
             )
 
         if provider_mode == "openai":

@@ -18,6 +18,7 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-90}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
     restart: "no"
   backend:
     image: ${OMNIOPS_BACKEND_IMAGE:?set immutable backend image}

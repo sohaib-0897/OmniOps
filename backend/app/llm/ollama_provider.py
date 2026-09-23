@@ -28,10 +28,17 @@ class OllamaProvider(BaseLLMClient):
     RETRY_DELAY_SECONDS = 1.0
     WORKER_LEASE_SECONDS = 120.0
 
-    def __init__(self, base_url: str, model: str, timeout_seconds: float = 90.0):
+    def __init__(self, base_url: str, model: str, timeout_seconds: float = 90.0, num_ctx: int = 8192):
         self.base_url = base_url.rstrip("/")
         self.model = model.strip()
         self.timeout_seconds = float(timeout_seconds)
+        self.num_ctx = int(num_ctx)
+        if self.num_ctx <= 0:
+            raise ProviderError(
+                ProviderState.UNAVAILABLE,
+                "LLM_PROVIDER_REQUIRED",
+                "OLLAMA_NUM_CTX must be greater than zero.",
+            )
         if not self.base_url or not self.model:
             raise ProviderError(
                 ProviderState.UNAVAILABLE,
@@ -88,7 +95,7 @@ class OllamaProvider(BaseLLMClient):
             "stream": False,
             "format": schema,
             "think": False,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_ctx": self.num_ctx},
         }
 
         logger.info("Ollama request started model=%s operation=%s", self.model, output_model.__name__)
@@ -125,6 +132,17 @@ class OllamaProvider(BaseLLMClient):
                     )
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
                     continue
+                if response.status_code == 400 and self._is_context_overflow(response):
+                    logger.error(
+                        "Ollama request failed code=PROVIDER_CONTEXT_EXCEEDED operation=%s num_ctx=%s",
+                        output_model.__name__,
+                        self.num_ctx,
+                    )
+                    raise ProviderError(
+                        ProviderState.UNAVAILABLE,
+                        "PROVIDER_CONTEXT_EXCEEDED",
+                        "The request exceeds the configured Ollama context window (OLLAMA_NUM_CTX).",
+                    )
                 if response.status_code != 200:
                     logger.error("Ollama request failed code=PROVIDER_UNAVAILABLE operation=%s", output_model.__name__)
                     raise ProviderError(
@@ -147,6 +165,14 @@ class OllamaProvider(BaseLLMClient):
                     ) from exc
 
         raise ProviderError(ProviderState.UNAVAILABLE, "PROVIDER_UNAVAILABLE", "Ollama retry loop ended without a response.")
+
+    @staticmethod
+    def _is_context_overflow(response: httpx.Response) -> bool:
+        try:
+            error = response.json().get("error")
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return isinstance(error, str) and "exceed_context_size" in error
 
     async def generate_investigation_plan(
         self,
@@ -193,7 +219,8 @@ class OllamaProvider(BaseLLMClient):
         return await self._structured_chat(
             system_instruction=(
                 "Produce an evidence-grounded report. Every factual claim must cite one or more exact evidence "
-                "IDs supplied by the application; never invent IDs or facts."
+                "IDs supplied by the application; never invent IDs or facts. Give each claim its own unique "
+                "claim_id (CLM-001, CLM-002, ...); never reuse a claim_id or use an evidence ID as a claim_id."
             ),
             prompt=(
                 f"Objective: {objective}\n\nEvidence: {json.dumps(evidence_items, indent=2, default=str)}\n\n"

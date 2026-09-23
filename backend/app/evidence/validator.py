@@ -132,13 +132,15 @@ async def validate_supporting_claims(db: AsyncSession, session_id: uuid.UUID, cl
     if not codes:
         return ValidationResult(False, ["UNSUPPORTED_INFERENCE"])
     for code in codes:
-        claim = (await db.execute(select(VerifiedClaim).where(
+        claims = (await db.execute(select(VerifiedClaim.id).where(
             VerifiedClaim.session_id == session_id,
             VerifiedClaim.claim_id_code == code,
             VerifiedClaim.verification_status == "VERIFIED",
-        ))).scalar_one_or_none()
-        if not claim:
+        ))).scalars().all()
+        if not claims:
             errors.append(f"VERIFIED_CLAIM_NOT_FOUND:{code}")
+        elif len(claims) > 1:
+            errors.append(f"AMBIGUOUS_CLAIM_REFERENCE:{code}")
     return ValidationResult(not errors, errors)
 
 
@@ -150,11 +152,13 @@ async def validate_recommendation_support(db: AsyncSession, session_id: uuid.UUI
     claim_result = await validate_supporting_claims(db, session_id, claim_codes)
     errors = list(claim_result.errors)
     for code in dict.fromkeys(inference_codes):
-        inference = (await db.execute(select(InferenceRecord).where(
+        inferences = (await db.execute(select(InferenceRecord.id).where(
             InferenceRecord.session_id == session_id,
             InferenceRecord.inference_id_code == code,
             InferenceRecord.verification_status == "VERIFIED",
-        ))).scalar_one_or_none()
-        if not inference:
+        ))).scalars().all()
+        if not inferences:
             errors.append(f"VERIFIED_INFERENCE_NOT_FOUND:{code}")
+        elif len(inferences) > 1:
+            errors.append(f"AMBIGUOUS_INFERENCE_REFERENCE:{code}")
     return ValidationResult(not errors, errors)

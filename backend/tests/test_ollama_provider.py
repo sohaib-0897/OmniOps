@@ -134,6 +134,55 @@ async def test_ollama_failures_are_explicit(monkeypatch, response, expected_code
 
 
 @pytest.mark.asyncio
+async def test_ollama_requests_configured_context_window(monkeypatch):
+    """Live regression: without num_ctx Ollama applied its 4096-token default and
+    rejected a six-chunk synthesis prompt (4284 tokens) with HTTP 400."""
+    client = FakeClient(posts=[chat_response(json.dumps({
+        "reasoning_summary": "Retrieve.",
+        "tasks": [{"id": "T1", "title": "t", "description": "d", "target_modality": "document", "expected_output": "e"}],
+    }))])
+    monkeypatch.setattr("app.llm.ollama_provider.httpx.AsyncClient", lambda **_kwargs: client)
+
+    await OllamaProvider("http://ollama:11434", "qwen3:4b").generate_investigation_plan("objective", {})
+    assert client.payloads[0]["options"]["num_ctx"] == settings.OLLAMA_NUM_CTX
+    assert settings.OLLAMA_NUM_CTX >= 8192
+
+    client = FakeClient(posts=[chat_response(json.dumps({
+        "reasoning_summary": "Retrieve.",
+        "tasks": [{"id": "T1", "title": "t", "description": "d", "target_modality": "document", "expected_output": "e"}],
+    }))])
+    monkeypatch.setattr("app.llm.ollama_provider.httpx.AsyncClient", lambda **_kwargs: client)
+    await OllamaProvider("http://ollama:11434", "qwen3:4b", num_ctx=16384).generate_investigation_plan("objective", {})
+    assert client.payloads[0]["options"]["num_ctx"] == 16384
+
+    with pytest.raises(ProviderError) as raised:
+        OllamaProvider("http://ollama:11434", "qwen3:4b", num_ctx=0)
+    assert raised.value.code == "LLM_PROVIDER_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_ollama_context_overflow_is_explicit_and_not_retried(monkeypatch):
+    overflow = FakeResponse(400, {"error": json.dumps({"error": {
+        "code": 400, "type": "exceed_context_size_error",
+        "message": "request (4284 tokens) exceeds the available context size (4096 tokens), try increasing it",
+        "n_prompt_tokens": 4284, "n_ctx": 4096,
+    }})})
+    client = FakeClient(posts=[overflow])
+    monkeypatch.setattr("app.llm.ollama_provider.httpx.AsyncClient", lambda **_kwargs: client)
+
+    with pytest.raises(ProviderError) as raised:
+        await OllamaProvider("http://ollama:11434", "qwen3:4b").verify_and_synthesize("objective", [], [], [])
+    assert raised.value.code == "PROVIDER_CONTEXT_EXCEEDED"
+    assert client.post_calls == 1
+
+    client = FakeClient(posts=[FakeResponse(400, {"error": "invalid request"})])
+    monkeypatch.setattr("app.llm.ollama_provider.httpx.AsyncClient", lambda **_kwargs: client)
+    with pytest.raises(ProviderError) as raised:
+        await OllamaProvider("http://ollama:11434", "qwen3:4b").verify_and_synthesize("objective", [], [], [])
+    assert raised.value.code == "PROVIDER_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_ollama_readiness_requires_configured_model(monkeypatch):
     missing = FakeClient(get=FakeResponse(payload={"models": [{"name": "gemma3:1b"}]}))
     monkeypatch.setattr("app.llm.ollama_provider.httpx.AsyncClient", lambda **_kwargs: missing)

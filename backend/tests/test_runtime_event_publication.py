@@ -182,6 +182,65 @@ async def test_provider_unavailable_fails_investigation_without_killing_the_work
     assert "investigation.completed" not in emitted
 
 
+class EmptyRetrievalPlanner:
+    async def generate_investigation_plan(self, _objective, _catalog):
+        from app.llm.base import PlanOutput, PlannedTask
+        return PlanOutput(reasoning_summary="Retrieve.", tasks=[PlannedTask(
+            id="task1", title="Retrieve", description="hello", target_modality="document", expected_output="facts",
+        )])
+
+    async def decide_next_action(self, *_args):
+        from app.llm.base import ToolDecision
+        return ToolDecision(tool_name="hybrid_document_search", arguments={"query": "hello", "top_k": 5},
+                            user_activity_summary="Searching.")
+
+
+@pytest.mark.asyncio
+async def test_post_planning_failure_records_the_state_it_stopped_in(
+    db_session, test_user, test_workspace, monkeypatch,
+):
+    """Live regression: an empty retrieval failed with EVIDENCE_NOT_FOUND after
+    planning, but the failure rollback discarded the plan/execution events, so
+    the persisted history (created -> failed) read as a planning failure."""
+    from app.agent import service as service_module
+
+    class Empty:
+        results = []
+
+        def model_dump(self):
+            return {"results": []}
+
+    async def empty_search(**_kwargs):
+        return Empty()
+
+    monkeypatch.setattr(service_module.HybridRetriever, "search", staticmethod(empty_search))
+
+    async def capture(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(sse_manager, "emit", capture)
+    investigation = InvestigationSession(
+        workspace_id=test_workspace.id, user_id=test_user.id,
+        objective="hello", current_state=RuntimeState.CREATED.value,
+    )
+    db_session.add(investigation)
+    await db_session.commit()
+    investigation_id = investigation.id
+
+    result = await InvestigationRuntime(db_session, llm_client=EmptyRetrievalPlanner()).run_worker_once("worker-empty")
+
+    assert result["error_code"] == "EVIDENCE_NOT_FOUND"
+    row = (await db_session.execute(
+        select(InvestigationSession).where(InvestigationSession.id == investigation_id)
+    )).scalar_one()
+    assert row.status == "failed" and row.final_response is None
+    failed = (await db_session.execute(select(RuntimeEvent).where(
+        RuntimeEvent.investigation_id == investigation_id, RuntimeEvent.event_type == "investigation.failed",
+    ))).scalar_one()
+    assert failed.payload["code"] == "EVIDENCE_NOT_FOUND"
+    assert failed.payload["failed_state"] == RuntimeState.OBSERVING.value
+
+
 @pytest.mark.asyncio
 async def test_worker_accepts_further_work_after_a_failed_investigation(
     db_session, test_user, test_workspace, monkeypatch,

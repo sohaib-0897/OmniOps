@@ -125,6 +125,103 @@ async def test_default_runtime_uses_provider_plan_tools_and_grounded_synthesis(
     assert finding["detail"] == "42 million"
 
 
+class DuplicateClaimIdProvider(FakeProviderClient):
+    """Live regression: qwen3:4b reused one claim_id for different statements,
+    making every inference/recommendation reference to it ambiguous."""
+
+    async def verify_and_synthesize(self, objective, observations, evidence_items, calculations):
+        from app.llm.base import InferenceItem, RecommendationItem
+        evidence_id = evidence_items[0]["id"]
+        claim = lambda code, text: EpistemicClaim(
+            claim_id=code, statement=text, epistemic_type="fact", confidence_score=0.9, citations=[evidence_id],
+        )
+        return SynthesisReport(
+            executive_summary="Revenue was 42 million.",
+            key_findings=[{"title": "Revenue", "detail": "42 million", "claim_id": "CLM-002"}],
+            claims=[
+                claim("CLM-001", "Revenue was 42 million."),
+                claim("CLM-001", "Revenue was audited."),
+                claim("CLM-002", "Audited revenue was reported."),
+            ],
+            inferences=[InferenceItem(inference_id="INF-1", statement="Ambiguous.", supporting_claim_ids=["CLM-001"])],
+            recommendations=[RecommendationItem(
+                recommendation_id="REC-1", title="Act", action="Act on revenue.", priority="HIGH",
+                supported_by_claims=["CLM-001"],
+            )],
+        )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_provider_claim_ids_are_rejected_not_crashed(
+    db_session, test_user, test_workspace, monkeypatch,
+):
+    source = SourceDocument(
+        workspace_id=test_workspace.id, file_name="revenue.txt", storage_path="revenue.txt",
+        mime_type="text/plain", byte_size=32, sha256_hash="d" * 64,
+        modality="text", processing_status=ProcessingStatus.READY.value,
+    )
+    db_session.add(source)
+    await db_session.flush()
+    chunk = DocumentChunk(
+        workspace_id=test_workspace.id, source_id=source.id, chunk_index=0,
+        content="Audited revenue was 42 million.", modality="text",
+        extraction_method="UTF8_TEXT", lexical_search_status="READY",
+        semantic_search_status="UNAVAILABLE",
+    )
+    db_session.add(chunk)
+    investigation = InvestigationSession(
+        workspace_id=test_workspace.id, user_id=test_user.id, objective="What was audited revenue?",
+    )
+    db_session.add(investigation)
+    await db_session.commit()
+
+    async def fake_search(**kwargs):
+        return HybridSearchResponse(
+            mode="LEXICAL_ONLY", backend="POSTGRESQL_PGVECTOR_FTS_RRF", rrf_k=60,
+            semantic_state="UNAVAILABLE", lexical_state="READY",
+            results=[RetrievedChunk(
+                chunk_id=str(chunk.id), source_id=str(source.id), source_name=source.file_name,
+                modality="text", content=chunk.content, lexical_rank=1, lexical_score=1.0, fused_score=1 / 61,
+            )],
+        )
+
+    monkeypatch.setattr("app.agent.service.HybridRetriever.search", fake_search)
+    result = await InvestigationRuntime(db_session, llm_client=DuplicateClaimIdProvider()).execute_claimed(investigation)
+    await db_session.refresh(investigation)
+
+    assert result["status"] == "completed", result
+    report = investigation.final_response
+    assert [c["claim_id"] for c in report["claims"]] == ["CLM-002"]
+    rejected = report["rejected_proposals"]
+    duplicates = [item for item in rejected if item.get("claim_id") == "CLM-001"]
+    assert len(duplicates) == 2
+    assert all("DUPLICATE_CLAIM_ID:CLM-001" in item["verification_errors"] for item in duplicates)
+    assert any(item.get("recommendation_id") == "REC-1" for item in rejected)
+    assert any(item.get("inference_id") == "INF-1" for item in rejected)
+    assert report["recommendations"] == [] and report["inferences"] == []
+    verified = (await db_session.execute(select(VerifiedClaim.claim_id_code).where(
+        VerifiedClaim.session_id == investigation.id, VerifiedClaim.verification_status == "VERIFIED",
+    ))).scalars().all()
+    assert verified == ["CLM-002"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_verified_claim_reference_is_an_error_not_a_crash(db_session, test_user, test_workspace):
+    from app.evidence.validator import validate_supporting_claims
+    investigation = InvestigationSession(workspace_id=test_workspace.id, user_id=test_user.id, objective="ambiguous")
+    db_session.add(investigation)
+    await db_session.flush()
+    for text in ("First statement.", "Second statement."):
+        await persist_claim(
+            db_session, session_id=investigation.id, step_id="synthesis:1", statement=text,
+            lineage={"evidence_ids": [], "calculation_ids": []}, claim_id_code="CLM-001",
+            epistemic_type="fact", confidence_score=None, supporting_citations=[], calculation_ids=[],
+            supporting_claims=[], verification_status="VERIFIED", verification_errors=[],
+        )
+    result = await validate_supporting_claims(db_session, investigation.id, ["CLM-001"])
+    assert not result.valid and result.errors == ["AMBIGUOUS_CLAIM_REFERENCE:CLM-001"]
+
+
 @pytest.mark.asyncio
 async def test_calculation_hash_is_canonical_and_nested_lineage_is_checked(
     db_session, test_user, test_workspace,

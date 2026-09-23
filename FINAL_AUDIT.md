@@ -372,3 +372,91 @@ exception.
 - Model-output observation, not a defect: `qwen3:4b` emitted the evidence UUID as `claim_id_code`
   for all three claims rather than distinct `claim_NNN` codes, so those codes collide within an
   investigation. Citations and lineage still resolve correctly.
+
+## Post-v1.0.1 Live Regression — "Analysis couldn't continue" (2026-09-23)
+
+A live report investigation failed with the UI message "Durable runtime could not complete the
+investigation. Stopped while understanding your request." The earlier Ollama results above
+(`ab0d6688…`, `302ab499…`) are unchanged historical evidence. This section records a separate
+diagnosis and fix; nothing above was rewritten.
+
+### Environment
+
+Live `omniops-ubuntu` stack through Caddy on port 80. Before the fix, backend and worker were
+image `d5f5c1cc…` (the same image and start time as the passing Test A/C runs; 0 restarts),
+`LLM_PROVIDER=ollama`, `qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=90`, Ollama `0.34.2`, model present,
+worker → Ollama reachable. Migration head `20260912_final_audit_closure`. **No deployment or
+configuration change caused the regression.**
+
+### Root causes (each proven against the live runtime)
+
+1. **Synthesis prompt exceeded Ollama's default context window.** The provider sent no
+   `num_ctx`, so Ollama applied its 4096-token default. Replaying the persisted synthesis payload
+   of `bc2b6b71-592e-44b8-af13-16165e0afeff` returned `HTTP 400 exceed_context_size_error: request
+   (4284 tokens) exceeds the available context size (4096 tokens)`. The adapter reported that as
+   the misleading `PROVIDER_UNAVAILABLE`. Planning, the persisted plan and all four retrieval steps
+   had succeeded; the failure was at synthesis. Measured prompt sizes: Test A/C, 1 evidence chunk,
+   ~1,255 tokens (pass); 5 chunks, 3,722 (pass); 6 chunks, 4,284–4,303 (fail); 7 chunks, 4,841
+   (fail). Whether a run fails depends on how many chunks the LLM-planned retrieval returns.
+2. **Failure rollback hid how far a run had got.** The objective "hello" on a workspace whose only
+   source was `sales_data.xlsx` (0 text chunks) was planned, retrieval returned nothing, and the
+   executor correctly failed closed with `EVIDENCE_NOT_FOUND`. The failure handler's rollback then
+   discarded the uncommitted plan and execution events. The persisted history was
+   `investigation.created → investigation.failed`, which the UI accurately rendered as "Stopped
+   while understanding your request". The frontend mapping was faithful; the persisted history
+   understated the stage. Reproduced through the public API as
+   `d24114ab-680e-48d6-ac69-6b347204f5d2`.
+3. **Duplicate provider claim IDs crashed synthesis** (latent; exposed once fix 1 let 6+ chunk
+   syntheses reach claim validation). `qwen3:4b` emitted 5 claims with only 3 distinct
+   `claim_id`s, reusing evidence UUIDs. Both copies were persisted as VERIFIED, and
+   `validate_supporting_claims` raised `sqlalchemy.exc.MultipleResultsFound`, surfacing as
+   `INVESTIGATION_FAILED` (live run `68b833f3-235b-4a47-9cb8-d91dc16ec2ee`; reproduced 3/3 with
+   rollback). **This corrects the earlier note above that called the `claim_id` collision "not a
+   defect".**
+
+### Fixes
+
+- `OllamaProvider` sends `options.num_ctx` from a new `OLLAMA_NUM_CTX` setting (default `8192`,
+  must be > 0). HTTP 400 `exceed_context_size` now fails explicitly and without retry as
+  `PROVIDER_CONTEXT_EXCEEDED`. Measured on the live host (RTX 4050, 6 GB): the 6- and 7-chunk
+  payloads return 200 with schema-valid output in 48–55 s; the model is fully GPU-resident
+  (3.87 GB) at 8192.
+- The `investigation.failed` event payload records `failed_state`, the runtime state reached
+  before rollback, read without an ORM lazy load. The frontend stage derivation uses it.
+- Synthesis rejects every claim that shares a reused `claim_id` (`DUPLICATE_CLAIM_ID:<id>`), so
+  references to it are rejected instead of being guessed. The validators report
+  `AMBIGUOUS_CLAIM_REFERENCE` / `AMBIGUOUS_INFERENCE_REFERENCE` rather than raising. The Ollama
+  synthesis instruction now asks for unique claim IDs. Validation was not weakened.
+- `OLLAMA_NUM_CTX` was added to every compose topology and `.env.example`. No cross-provider
+  fallback was added, and evidence is not truncated.
+
+### Live post-fix evidence (public API, same PDF and objective)
+
+- `38ba7a3d-8ff1-4ca7-b525-54a5c2e803f9`: source READY; plan v1, 4 steps COMPLETED (1 attempt
+  each); 6 evidence items / 6 chunks / 9,300 chars; 7 VERIFIED claim rows with 7 distinct codes;
+  3 recommendations; 0 rejected; `final_response` persisted; SSE delivered through
+  `synthesis.completed` → `investigation.completed`; lease released; `completed`. The same
+  synthesis payload at `num_ctx=4096` returns 400 (4,303 tokens), so this run exercises the fix.
+- Also completed: `b2bcce16-f6f1-4e8c-88fb-240d0318a2f6` (5 chunks).
+- Failure path, `32769008-0a98-477b-a8e1-8ff46e8031cc` ("hello", xlsx only): `failed`,
+  `EVIDENCE_NOT_FOUND`, `final_response` NULL, 0 evidence / claims / recommendations, lease
+  released, event payload `{"code": "EVIDENCE_NOT_FOUND", "failed_state": "observing"}`.
+- Worker: PID 79547, 0 restarts across the post-fix runs; 0 `MissingGreenlet`, 0 `Traceback`.
+
+### Regression
+
+- New tests: `num_ctx` sent and configurable; context overflow is explicit and not retried;
+  post-planning failure records `failed_state`; duplicate claim IDs are rejected, not crashed;
+  ambiguous verified-claim reference is an error. Each failed on the pre-fix code. Frontend: the
+  failure stage follows `failed_state`.
+- Backend, fresh disposable pgvector database: `232 passed, 0 failed, 0 skipped`.
+- Frontend unit tests `24/24`; TypeScript `PASS`; lint `PASS`; production build `PASS`.
+
+### Residual observations
+
+- A provider claim identical in statement and citations to an earlier claim but under a different
+  `claim_id` resolves, by the existing logical-identity idempotency, to the earlier row. The report
+  then lists that verified claim twice (seen once in `38ba7a3d…`). No unverified or fabricated
+  content results; not changed in this fix.
+- Larger inputs can still exceed 8192 tokens. They now fail explicitly as
+  `PROVIDER_CONTEXT_EXCEEDED`; raise `OLLAMA_NUM_CTX` if the host's memory allows.

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.persistence import finalize_synthesis, persist_claim
@@ -33,6 +33,7 @@ from app.agent.runtime import (
     transition,
 )
 from app.evidence.validator import (
+    ValidationResult,
     validate_claim_proposal,
     validate_recommendation_support,
     validate_supporting_claims,
@@ -333,10 +334,21 @@ class InvestigationRuntime:
 
         report_claims: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
+        # A claim_id reused by the provider makes every reference to it
+        # ambiguous, so none of the claims sharing it can be verified.
+        seen_codes: set[str] = set()
+        duplicate_codes = {
+            claim.claim_id for claim in proposal.claims
+            if claim.claim_id in seen_codes or seen_codes.add(claim.claim_id)
+        }
         for claim in proposal.claims:
             validation = await validate_claim_proposal(
                 self.db, investigation.id, claim.citations, claim.calculation_ids,
             )
+            if claim.claim_id in duplicate_codes:
+                validation = ValidationResult(
+                    False, [f"DUPLICATE_CLAIM_ID:{claim.claim_id}", *validation.errors],
+                )
             persisted = await persist_claim(
                 self.db, session_id=investigation.id,
                 step_id=f"synthesis:{investigation.plan_version}", statement=claim.statement,
@@ -508,6 +520,10 @@ class InvestigationRuntime:
                 or not failure_code.replace("_", "").isalnum()
             ):
                 failure_code = "INVESTIGATION_FAILED"
+            # The rollback below discards uncommitted plan/execution events, so
+            # record the state actually reached. Read the loaded attribute
+            # without triggering an async lazy load.
+            failed_state = sa_inspect(investigation).dict.get("current_state")
 
             # A failed flush leaves AsyncSession in partial rollback. Recover
             # before checking fencing or persisting the explicit failure.
@@ -541,7 +557,7 @@ class InvestigationRuntime:
             await persist_runtime_event(
                 self.db, investigation.id, "investigation.failed",
                 logical_identity(investigation.id, "investigation.failed", investigation.plan_version),
-                {"code": investigation.failure_code},
+                {"code": investigation.failure_code, "failed_state": failed_state},
             )
             await self.db.commit(); await publish_persisted_runtime_events(self.db)
             return {"status": RuntimeState.FAILED.value, "error_code": investigation.failure_code}
