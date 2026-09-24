@@ -25,11 +25,18 @@ const securityHeaders = [
   },
 ];
 
+// Development only: proxy the API through the dev server so the browser stays
+// same-origin (e.g. OMNIOPS_DEV_API_PROXY=http://localhost). Never used in builds.
+const devApiProxy = isDevelopment ? process.env.OMNIOPS_DEV_API_PROXY : undefined;
+
 const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
+  },
+  async rewrites() {
+    return devApiProxy ? [{ source: "/api/v1/:path*", destination: `${devApiProxy}/api/v1/:path*` }] : [];
   },
 };
 

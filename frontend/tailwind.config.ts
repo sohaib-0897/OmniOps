@@ -1,7 +1,34 @@
 import type { Config } from "tailwindcss";
 
+const token = (name: string) => `rgb(var(--${name}-rgb) / <alpha-value>)`;
+
+/*
+ * The neutral scale is remapped onto the Concept B tokens so every retained
+ * utility (zinc-*, red-*, amber-*) follows the active theme. New components use
+ * the semantic names (canvas, surface, ink, provenance…).
+ */
+const neutral = {
+  50: token("ink"),
+  100: token("ink"),
+  200: token("ink"),
+  300: token("ink-2"),
+  400: token("ink-3"),
+  500: token("ink-3"),
+  600: token("line-strong"),
+  700: token("line-strong"),
+  800: token("line"),
+  900: token("raised"),
+  950: token("canvas"),
+};
+const critical = Object.fromEntries(
+  [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((step) => [step, token("critical")]),
+);
+const caution = Object.fromEntries(
+  [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((step) => [step, token("caution")]),
+);
+
 const config: Config = {
-  darkMode: ["class"],
+  darkMode: ["selector", '[data-theme="dark"]'],
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -10,44 +37,30 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
+        zinc: neutral,
+        neutral,
+        red: critical,
+        amber: caution,
+        canvas: token("canvas"),
+        surface: token("surface"),
+        raised: token("raised"),
+        line: { DEFAULT: token("line"), strong: token("line-strong") },
+        ink: { DEFAULT: token("ink"), 2: token("ink-2"), 3: token("ink-3"), inverse: token("ink-inverse") },
+        provenance: { DEFAULT: token("provenance"), strong: token("provenance-strong") },
+        caution: token("caution"),
+        critical: token("critical"),
+        border: token("line"),
+      },
+      fontFamily: {
+        sans: ["var(--font-ui)"],
+        serif: ["var(--font-reading)"],
+        mono: ["var(--font-code)"],
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        control: "var(--radius-control)",
+        chip: "var(--radius-chip)",
+        pane: "var(--radius-pane)",
+        composer: "var(--radius-composer)",
       },
     },
   },

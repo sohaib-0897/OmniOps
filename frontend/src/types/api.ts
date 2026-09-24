@@ -263,3 +263,34 @@ export interface EvidenceLineageGraph {
   citations_count: number;
   calculations_count: number;
 }
+
+/** GET /workspaces/{id}/files/{file_id}/outline — columnar, no passage text. */
+export interface PassageMap {
+  source_id: string;
+  modality: string;
+  processing_status: SourceDocument["processing_status"];
+  passage_count: number;
+  chunk_id: string[];
+  chunk_index: number[];
+  char_length: number[];
+  page_number: Array<number | null>;
+  audio_start_ms: Array<number | null>;
+  audio_end_ms: Array<number | null>;
+  heading: Array<string | null>;
+}
+
+/** GET /workspaces/{id}/investigations row. */
+export interface InvestigationSummary {
+  id: string;
+  objective: string;
+  status: InvestigationSession["status"];
+  created_at: string;
+  completed_at?: string | null;
+}
+
+export interface InvestigationHistoryPage {
+  items: InvestigationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}

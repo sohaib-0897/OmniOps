@@ -118,8 +118,8 @@ export function Dialog({
       }}
       className={
         drawer
-          ? "m-0 ml-auto h-dvh max-h-dvh w-full max-w-xl border-l border-zinc-700 bg-[#121315] p-0 text-zinc-100"
-          : `max-h-[90dvh] w-[calc(100%_-_2rem)] ${compact ? "max-w-md" : "max-w-3xl"} rounded-lg border border-zinc-700 bg-[#121315] p-0 text-zinc-100`
+          ? "m-0 ml-auto h-dvh max-h-dvh w-full max-w-xl border-l border-zinc-700 bg-surface p-0 text-zinc-100"
+          : `max-h-[90dvh] w-[calc(100%_-_2rem)] ${compact ? "max-w-md" : "max-w-3xl"} rounded-lg border border-zinc-700 bg-surface p-0 text-zinc-100`
       }
     >
       <div className="flex max-h-[inherit] flex-col">

@@ -39,6 +39,9 @@ export interface InvestigationStreamState {
   errorMessage: string | null;
   failureCode: string | null;
   timeline: RuntimeTimelineEvent[];
+  createdAt: string | null;
+  completedAt: string | null;
+  workspaceId: string | null;
 }
 
 export interface RuntimeTimelineEvent {
@@ -60,6 +63,9 @@ const initialState: InvestigationStreamState = {
   errorMessage: null,
   failureCode: null,
   timeline: [],
+  createdAt: null,
+  completedAt: null,
+  workspaceId: null,
 };
 
 type StreamLike = {
@@ -157,16 +163,6 @@ function mergeSteps(current: AgentStep[], incoming: AgentStep[]): AgentStep[] {
   return Array.from(byId.values()).sort(
     (a, b) => a.step_number - b.step_number,
   );
-}
-
-function eventData(event: MessageEvent): Record<string, any> {
-  const envelope = JSON.parse(event.data);
-  return {
-    ...envelope,
-    ...(envelope.payload && typeof envelope.payload === "object"
-      ? envelope.payload
-      : {}),
-  };
 }
 
 /**
@@ -320,6 +316,9 @@ export function useInvestigationStream(investigationId: string | null) {
             ...prev,
             status: session.status as any,
             objective: session.objective,
+            createdAt: session.created_at,
+            completedAt: session.completed_at ?? null,
+            workspaceId: session.workspace_id,
             activitySummary:
               session.status === "completed"
                 ? "Investigation completed. Report synthesized."
@@ -349,6 +348,8 @@ export function useInvestigationStream(investigationId: string | null) {
             ...prev,
             status: (session.current_state || session.status) as any,
             objective: session.objective,
+            createdAt: session.created_at,
+            workspaceId: session.workspace_id,
             errorMessage:
               prev.errorMessage === resolvedSyncError
                 ? null
@@ -387,19 +388,7 @@ export function useInvestigationStream(investigationId: string | null) {
     }));
 
     const addTimelineEvent = (eventType: string, raw: Record<string, any>) => {
-      const aliases: Record<string, string> = {
-        investigation_started: "investigation.started",
-        plan_created: "plan.created",
-        status_update: "state.changed",
-        task_started: "step.started",
-        tool_started: "tool.started",
-        tool_completed: "tool.completed",
-        evidence_found: "observation.created",
-        final_report: "synthesis.completed",
-        cancelled: "investigation.cancelled",
-        failed: "investigation.failed",
-      };
-      const canonicalType = aliases[eventType] || eventType;
+      const canonicalType = eventType;
       const payload =
         raw.payload && typeof raw.payload === "object" ? raw.payload : raw;
       const event: RuntimeTimelineEvent = {
@@ -502,167 +491,6 @@ export function useInvestigationStream(investigationId: string | null) {
         // Retain the stream for this view's lifetime; cleanup closes it on navigation.
       }
     }, 1000);
-
-    es.addEventListener("investigation_started", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("investigation.started", data);
-      setState((prev) => ({
-        ...prev,
-        status: ["completed", "failed", "cancelled"].includes(prev.status)
-          ? prev.status
-          : "planning",
-        activitySummary: `Investigation started: "${data.objective?.slice(0, 80)}..."`,
-      }));
-    });
-
-    es.addEventListener("plan_created", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("plan.created", data);
-      setState((prev) => ({
-        ...prev,
-        status: ["completed", "failed", "cancelled"].includes(prev.status)
-          ? prev.status
-          : "running",
-        activitySummary: "Plan formulated. Executing investigation tasks...",
-        planTasks: data.tasks || [],
-      }));
-    });
-
-    es.addEventListener("status_update", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("state.changed", data);
-      setState((prev) => ({
-        ...prev,
-        status: ["completed", "failed", "cancelled"].includes(prev.status)
-          ? prev.status
-          : data.status || prev.status,
-        activitySummary: data.summary || prev.activitySummary,
-      }));
-    });
-
-    es.addEventListener("task_started", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("step.started", data);
-      setState((prev) => ({
-        ...prev,
-        status: ["completed", "failed", "cancelled"].includes(prev.status)
-          ? prev.status
-          : "running",
-        activitySummary: `Starting task: ${data.title}...`,
-        planTasks: prev.planTasks.map((t) =>
-          t.id === data.task_id ? { ...t, status: "in_progress" } : t,
-        ),
-      }));
-    });
-
-    es.addEventListener("tool_started", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("tool.started", data);
-      setState((prev) => ({
-        ...prev,
-        activitySummary: data.summary || `Running ${data.tool}...`,
-      }));
-    });
-
-    es.addEventListener("tool_completed", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("tool.completed", data);
-      setState((prev) => {
-        const newStep: AgentStep = {
-          id: data.step_id,
-          step_number: data.step_number,
-          step_type: data.step_type || "tool_call",
-          user_activity_summary:
-            data.user_activity_summary || `Executed ${data.tool}`,
-          tool_name: data.tool,
-          duration_ms: data.duration_ms || 0,
-          created_at: data.created_at,
-        };
-        return {
-          ...prev,
-          steps: mergeSteps(prev.steps, [newStep]),
-        };
-      });
-    });
-
-    es.addEventListener("evidence_found", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("observation.created", data);
-      setState((prev) => ({
-        ...prev,
-        evidenceDiscovered: prev.evidenceDiscovered.some(
-          (item) => item.citation_id === data.citation_id,
-        )
-          ? prev.evidenceDiscovered
-          : [
-              ...prev.evidenceDiscovered,
-              {
-                citation_id: data.citation_id,
-                source_name: data.source_name,
-                quote: data.quote,
-                modality: data.modality,
-              },
-            ],
-      }));
-    });
-
-    es.addEventListener("final_report", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("synthesis.completed", data);
-      if (
-        typeof data.executive_summary !== "string" ||
-        !Array.isArray(data.claims) ||
-        !Array.isArray(data.recommendations)
-      ) {
-        void fetchSession();
-        return;
-      }
-      setState((prev) => ({
-        ...prev,
-        status: "completed",
-        activitySummary: "Investigation completed. Report synthesized.",
-        finalResponse: normalizeFinalResponse(
-          data as InvestigationSession["final_response"],
-        ),
-      }));
-      clearInterval(pollTimer);
-    });
-
-    es.addEventListener("done", () => {
-      // Transport completion is not evidence of a completed investigation.
-      void fetchSession().then((done) => {
-        if (done) {
-          clearInterval(pollTimer);
-        }
-      });
-    });
-
-    es.addEventListener("cancelled", () => {
-      addTimelineEvent("investigation.cancelled", {});
-      setState((prev) => ({
-        ...prev,
-        status: "cancelled",
-        activitySummary: "Investigation cancelled.",
-      }));
-      clearInterval(pollTimer);
-    });
-
-    es.addEventListener("failed", (e: MessageEvent) => {
-      const data = eventData(e);
-      addTimelineEvent("investigation.failed", data);
-      setState((prev) => ({
-        ...prev,
-        status: "failed",
-        failureCode:
-          typeof (data.code || data.failure_code) === "string"
-            ? data.code || data.failure_code
-            : prev.failureCode,
-        errorMessage: normalizeStreamError(
-          data.error ?? data.error_message,
-        ),
-      }));
-      clearInterval(pollTimer);
-    });
 
     es.onerror = () => {
       if (isMounted)

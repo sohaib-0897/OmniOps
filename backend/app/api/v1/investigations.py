@@ -1,10 +1,10 @@
 import asyncio
 import uuid
 from typing import List, AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Header, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.models.evidence import RuntimeEvent
 
 from app.core.database import get_db, AsyncSessionLocal
@@ -14,7 +14,9 @@ from app.schemas.investigation import (
     InvestigationCreateRequest, 
     InvestigationResponse, 
     AgentStepResponse, 
-    InvestigationCancelResponse
+    InvestigationCancelResponse,
+    InvestigationSummary,
+    InvestigationHistoryPage,
 )
 from app.schemas.common import ResponseEnvelope
 from app.api.deps import get_current_user, get_workspace_membership, require_role
@@ -125,6 +127,39 @@ async def create_investigation(
         steps=[]
     )
     return ResponseEnvelope.ok(resp)
+
+
+@router.get("/workspaces/{workspace_id}/investigations", response_model=ResponseEnvelope[InvestigationHistoryPage])
+async def list_workspace_investigations(
+    workspace_id: uuid.UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100_000),
+    membership: WorkspaceMembership = Depends(get_workspace_membership),
+    db: AsyncSession = Depends(get_db)
+):
+    """Read-only, newest-first investigation history for one workspace."""
+    total = (await db.execute(
+        select(func.count(InvestigationSession.id)).where(InvestigationSession.workspace_id == workspace_id)
+    )).scalar_one()
+    rows = (await db.execute(
+        select(
+            InvestigationSession.id,
+            InvestigationSession.objective,
+            InvestigationSession.status,
+            InvestigationSession.created_at,
+            InvestigationSession.completed_at,
+        )
+        .where(InvestigationSession.workspace_id == workspace_id)
+        .order_by(InvestigationSession.created_at.desc(), InvestigationSession.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )).all()
+    return ResponseEnvelope.ok(InvestigationHistoryPage(
+        items=[InvestigationSummary(id=r[0], objective=r[1], status=r[2], created_at=r[3], completed_at=r[4]) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    ))
 
 
 @router.post("/investigations/{investigation_id}/resume", response_model=ResponseEnvelope[InvestigationResponse])

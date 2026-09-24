@@ -1,91 +1,343 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  Database,
-  FileText,
-  Layers3,
-  Loader2,
-  Plus,
-  Search,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+import { Eye, EyeOff, Loader2, LogOut } from "lucide-react";
+import useSWR from "swr";
 import { apiClient } from "@/lib/api-client";
-import { formatDate } from "@/lib/utils";
-import { AuthSession, User, Workspace } from "@/types/api";
-import {
-  BrandMark,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/ui/Primitives";
+import type {
+  AuthSession,
+  InvestigationHistoryPage,
+  SourceDocument,
+  TabularDataset,
+  User,
+  Workspace,
+} from "@/types/api";
+import { ErrorState, LoadingState } from "@/components/ui/Primitives";
 import { Dialog } from "@/components/ui/Dialog";
+import { BrandLockup, ThemeToggle } from "@/components/casefile/Brand";
+import { initials, StatusIcon } from "@/components/casefile/Rail";
+import { SourceRow } from "@/components/casefile/SourceRow";
+import { useOutlines } from "@/hooks/useCasefileData";
 
-export default function HomePage() {
+function relativeTime(value: string | null | undefined, now = Date.now()) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "";
+  const seconds = Math.max(0, Math.round((now - Date.parse(value)) / 1000));
+  if (seconds < 45) return "now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d`;
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function sinceLabel(value: string | null | undefined) {
+  const short = relativeTime(value);
+  if (!short) return "";
+  if (short === "now") return "just now";
+  const match = /^(\d+)([mhd])$/.exec(short);
+  if (!match) return short;
+  const unit = { m: "min", h: "h", d: "d" }[match[2] as "m" | "h" | "d"];
+  return `${match[1]} ${unit} ago`;
+}
+
+const fetcher = <T,>(url: string) => apiClient.get<T>(url);
+
+function WorkspaceCard({ workspace }: { workspace: Workspace }) {
+  const { data: files } = useSWR<SourceDocument[]>(`/workspaces/${workspace.id}/files`, fetcher);
+  const { data: tables } = useSWR<TabularDataset[]>(`/workspaces/${workspace.id}/tables`, fetcher);
+  const { data: history } = useSWR<InvestigationHistoryPage>(`/workspaces/${workspace.id}/investigations?limit=3`, fetcher);
+  const shown = (files ?? []).slice(0, 5);
+  const { outlines } = useOutlines(workspace.id, shown);
+  const processing = (files ?? []).filter((file) => ["pending", "processing"].includes(file.processing_status)).length;
+  const last = history?.items[0];
+  const summary = [
+    files ? `${files.length} ${files.length === 1 ? "source" : "sources"}` : "Loading sources",
+    processing ? `${processing} processing` : last ? `last question ${sinceLabel(last.created_at)}` : history ? "no questions yet" : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <article className="casefile-card" aria-labelledby={`ws-${workspace.id}`}>
+      <h2 id={`ws-${workspace.id}`} className="t-title truncate text-ink">{workspace.name}</h2>
+      <p className="t-meta mt-1 text-ink-3">{summary}</p>
+
+      <div className="min-h-[152px]">
+        <p className="t-overline mt-[22px]">Sources</p>
+        <div className="mt-2 flex flex-col">
+        {files && files.length === 0 && <p className="t-meta py-1 text-ink-3">No sources yet.</p>}
+        {shown.map((file) => (
+          <SourceRow key={file.id} file={file} map={outlines[file.id]} tables={(tables ?? []).filter((table) => table.source_id === file.id)} height={6} indexedFull decorative compact right={["pending", "processing"].includes(file.processing_status) ? "Processing" : ""} />
+        ))}
+        {files && files.length > shown.length && <p className="t-meta pt-1 text-ink-3">+ {files.length - shown.length} more</p>}
+        </div>
+      </div>
+
+      <div className="mt-[22px] border-t border-line pt-4">
+        <p className="t-overline">Recent questions</p>
+        <ul className="mt-2.5 flex flex-col gap-3">
+          {history && history.items.length === 0 && <li className="t-meta text-ink-3">No investigations yet.</li>}
+          {history?.items.map((item) => (
+            <li key={item.id}>
+              <Link href={`/workspaces/${workspace.id}?investigation=${item.id}`} className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-start gap-x-2 rounded-control">
+                <span className="pt-0.5"><StatusIcon status={item.status} /></span>
+                <span className="t-label truncate text-ink">{item.objective}</span>
+                <span className="t-meta pt-0.5 text-ink-3">{relativeTime(item.created_at)}</span>
+                <span className={`t-meta col-start-2 mt-0.5 ${item.status === "failed" ? "text-caution" : "text-ink-3"}`}>
+                  {item.status === "completed"
+                    ? `Completed${item.completed_at ? ` · ${sinceLabel(item.completed_at)}` : ""}`
+                    : item.status === "failed"
+                      ? "Stopped before a brief was saved"
+                      : item.status === "cancelled"
+                        ? "Cancelled"
+                        : `Running · started ${sinceLabel(item.created_at)}`}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <span className="flex-1" />
+      <Link href={`/workspaces/${workspace.id}`} className="t-label mt-6 self-start text-ink-2 hover:text-ink">
+        Open workspace →
+      </Link>
+    </article>
+  );
+}
+
+function Home({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const router = useRouter();
-  const [restoring, setRestoring] = useState(true);
+  const { data: workspaces, error, isLoading, mutate } = useSWR<Workspace[]>("/workspaces", fetcher);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const sourceTotal = (workspaces ?? []).reduce((sum, item) => sum + (item.documents_count ?? 0), 0);
+  const sorted = [...(workspaces ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy || !name.trim()) return;
+    setBusy(true);
+    setCreateError(null);
+    try {
+      const workspace = await apiClient.post<Workspace>("/workspaces", { name: name.trim() });
+      router.push(`/workspaces/${workspace.id}`);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Workspace could not be created.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="min-h-dvh">
+      <header className="border-b border-line">
+        <div className="mx-auto flex h-[76px] max-w-[1248px] items-center justify-between gap-4 px-6">
+          <BrandLockup />
+          <div className="relative flex items-center gap-3">
+            <ThemeToggle withLabel />
+            <button type="button" className="t-meta rounded-control px-2 py-1 text-ink-2 hover:text-ink" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((value) => !value)} aria-label={`Account: ${user.email}`}>
+              {initials(user)}
+            </button>
+            {menu && (
+              <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-30 w-60 rounded-control border border-line-strong bg-surface p-1" style={{ boxShadow: "var(--elevation-pane)" }}>
+                <p className="t-meta truncate px-2.5 py-2 text-ink-3">{user.email}</p>
+                <button type="button" role="menuitem" className="rail-item" onClick={onSignOut}>
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
+                  <span className="rail-item-label">Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      <main id="main-content" className="mx-auto max-w-[1248px] px-6 pb-16 pt-11">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="r-display text-ink">Casefiles</h1>
+            <p className="t-body mt-2.5 text-ink-2">
+              {workspaces ? `${workspaces.length} ${workspaces.length === 1 ? "workspace" : "workspaces"} · ${sourceTotal} ${sourceTotal === 1 ? "source" : "sources"}` : "Loading workspaces"}
+            </p>
+          </div>
+          <button type="button" className="btn-primary mt-2 h-9 px-[22px]" onClick={() => { setCreateOpen(true); setCreateError(null); }}>
+            New workspace
+          </button>
+        </div>
+        {error && (
+          <div className="mt-6">
+            <ErrorState message={error instanceof Error ? error.message : "Workspaces could not be loaded."} onRetry={() => void mutate()} />
+          </div>
+        )}
+        {isLoading ? (
+          <div className="mt-10"><LoadingState label="Loading workspaces" /></div>
+        ) : sorted.length === 0 && !error ? (
+          <div className="mt-10 rounded-pane border border-dashed border-line-strong p-10 text-center">
+            <p className="r-heading text-ink">Start a casefile</p>
+            <p className="t-body mx-auto mt-2 max-w-md text-ink-2">A workspace keeps related sources and investigations together. Create one, then add your first source.</p>
+            <button type="button" className="btn-primary mt-5" onClick={() => setCreateOpen(true)}>New workspace</button>
+          </div>
+        ) : (
+          <div className="mt-[46px] grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {sorted.map((workspace) => <WorkspaceCard key={workspace.id} workspace={workspace} />)}
+          </div>
+        )}
+        {sorted.length > 0 && (
+          <p className="t-meta mt-6 text-ink-3">Each segment is one indexed passage. Spreadsheets appear as tables. A dashed outline means the source is still processing.</p>
+        )}
+      </main>
+      <Dialog compact open={createOpen} onClose={() => setCreateOpen(false)} title="New workspace" description="Group the sources for an investigation." busy={busy}>
+        <form onSubmit={create} className="space-y-5">
+          <div>
+            <label htmlFor="workspace-name" className="field-label">Workspace name</label>
+            <input id="workspace-name" autoFocus required maxLength={255} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Quarterly operating review" className="field" aria-describedby={createError ? "create-error" : undefined} />
+          </div>
+          {createError && <div id="create-error"><ErrorState message={createError} /></div>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setCreateOpen(false)} disabled={busy} className="btn-secondary">Cancel</button>
+            <button disabled={busy || !name.trim()} className="btn-primary">{busy && <Loader2 className="h-4 w-4 animate-spin" />}Create workspace</button>
+          </div>
+        </form>
+      </Dialog>
+    </div>
+  );
+}
+
+/** Decorative motif: rows of passages, three threads converging on one answer. */
+function TraceMotif() {
+  const rows = 13;
+  const seeded = (row: number, index: number) => ((row * 73 + index * 37) % 11) / 11;
+  const cited: Record<number, number> = { 3: 0.38, 7: 0.55, 10: 0.74 };
+  return (
+    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 880 900" preserveAspectRatio="xMinYMid slice" aria-hidden="true" focusable="false">
+      {Array.from({ length: rows }, (_, row) => {
+        const y = 150 + row * 40;
+        const segments: Array<{ x: number; w: number }> = [];
+        let x = 0;
+        let index = 0;
+        while (x < 390) {
+          const w = 4 + seeded(row, index) * 14;
+          segments.push({ x, w });
+          x += w + 3;
+          index += 1;
+        }
+        const target = cited[row];
+        const hit = target != null ? segments[Math.floor(segments.length * target)] : null;
+        return (
+          <g key={row}>
+            {segments.map((segment, i) => (
+              <rect key={i} x={segment.x} y={y} width={segment.w} height="5" rx="1.5" fill={segment === hit ? "var(--provenance)" : "var(--track-indexed)"} />
+            ))}
+            {hit && <path d={`M${hit.x + hit.w} ${y + 2.5} C ${hit.x + 260} ${y + 2.5}, ${480} 443, 598 443`} fill="none" stroke="var(--provenance)" strokeWidth="1" />}
+          </g>
+        );
+      })}
+      <circle cx="598" cy="443" r="3.5" fill="var(--provenance)" />
+    </svg>
+  );
+}
+
+function SignIn({ expired, onAuthenticated }: { expired: boolean; onAuthenticated: (user: User) => void }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [expired, setExpired] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
+  const authenticate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const items = await apiClient.get<Workspace[]>("/workspaces");
-      setWorkspaces(items);
-      setError(null);
+      const result = await apiClient.post<AuthSession>(isLogin ? "/auth/login" : "/auth/register", isLogin ? { email, password } : { email, password, full_name: fullName });
+      apiClient.setToken(result.token.access_token);
+      setPassword("");
+      onAuthenticated(result.user);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Workspaces could not be loaded.",
-      );
+      setError(err instanceof Error ? err.message : "Sign-in failed. Check your details and try again.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, []);
+  };
+  return (
+    <div className="auth-grid">
+      <div className="auth-panel-b">
+        <BrandLockup />
+        <main id="main-content" className="my-auto w-full max-w-[368px] pb-[94px] pt-12">
+          <h1 className="r-title text-ink">{isLogin ? "Sign in" : "Create your account"}</h1>
+          <p className="t-body mt-2.5 text-ink-2">{isLogin ? "Continue to your casefiles." : "Start a casefile for your sources."}</p>
+          {expired && (
+            <p role="status" className="t-meta mt-5 rounded-control border border-line-strong p-3 text-ink-2">Your session has ended. Sign in to continue.</p>
+          )}
+          <form onSubmit={authenticate} aria-busy={busy} className="mt-8 space-y-7">
+            {!isLogin && (
+              <div>
+                <label htmlFor="full-name" className="field-label">Full name</label>
+                <input id="full-name" autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} className="field h-11" />
+              </div>
+            )}
+            <div>
+              <label htmlFor="email" className="field-label">Email</label>
+              <input id="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} className="field h-11" aria-describedby={error ? "auth-error" : undefined} />
+            </div>
+            <div>
+              <label htmlFor="password" className="field-label">Password</label>
+              <div className="relative">
+                <input id="password" type={showPassword ? "text" : "password"} autoComplete={isLogin ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} className="field h-11 pr-12" aria-describedby={error ? "auth-error" : undefined} />
+                <button type="button" className="btn-icon absolute right-1.5 top-1.5" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            {error && <div id="auth-error"><ErrorState title="Unable to sign in" message={error} /></div>}
+            <button disabled={busy} className="btn-primary !mt-9 h-11 w-full">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy ? (isLogin ? "Signing in…" : "Creating account…") : isLogin ? "Sign in" : "Create account"}
+            </button>
+            <p role="status" className="sr-only">{busy ? (isLogin ? "Signing in" : "Creating account") : ""}</p>
+          </form>
+          <p className="t-label mt-6 text-ink-2">
+            {isLogin ? "New here?" : "Already have an account?"}{" "}
+            <button type="button" disabled={busy} onClick={() => { setIsLogin(!isLogin); setError(null); }} className="ml-1 text-ink underline-offset-4 hover:underline">
+              {isLogin ? "Create an account" : "Sign in"}
+            </button>
+          </p>
+        </main>
+        <p className="t-meta text-ink-3">Sessions are short-lived and rotate automatically.</p>
+      </div>
+      <div className="auth-motif">
+        <TraceMotif />
+        <p className="r-title absolute max-w-[240px] text-ink" style={{ left: "calc(598 / 880 * 100% + 14px)", top: "calc(50% - 26px)" }}>
+          Every answer, traced to the passage it came from.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const [restoring, setRestoring] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
   useEffect(() => {
     let alive = true;
-    setExpired(
-      new URLSearchParams(window.location.search).get("session") === "expired",
-    );
+    setExpired(new URLSearchParams(window.location.search).get("session") === "expired");
+    document.title = "OmniOps";
     void (async () => {
       try {
-        const authenticated =
-          Boolean(apiClient.getAccessToken()) || (await apiClient.refresh());
+        const authenticated = Boolean(apiClient.getAccessToken()) || (await apiClient.refresh());
         if (authenticated) {
           const current = await apiClient.get<User>("/auth/me");
-          if (alive) {
-            setUser(current);
-            await load();
-          }
+          if (alive) setUser(current);
         }
       } catch (err) {
-        if (alive)
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Could not restore your session. Please try again.",
-          );
+        if (alive) setRestoreError(err instanceof Error ? err.message : "Could not restore your session. Please try again.");
       } finally {
         if (alive) setRestoring(false);
       }
@@ -93,405 +345,32 @@ export default function HomePage() {
     return () => {
       alive = false;
     };
-  }, [load]);
-  const authenticate = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await apiClient.post<AuthSession>(
-        isLogin ? "/auth/login" : "/auth/register",
-        isLogin
-          ? { email, password }
-          : { email, password, full_name: fullName },
-      );
-      apiClient.setToken(result.token.access_token);
-      setUser(result.user);
-      setPassword("");
-      setExpired(false);
-      await load();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Sign-in failed. Check your details and try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy || !name.trim()) return;
-    setBusy(true);
-    setCreateError(null);
-    try {
-      const workspace = await apiClient.post<Workspace>("/workspaces", {
-        name: name.trim(),
-      });
-      router.push(`/workspaces/${workspace.id}`);
-    } catch (err) {
-      setCreateError(
-        err instanceof Error ? err.message : "Workspace could not be created.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  const logout = async () => {
-    setBusy(true);
-    setError(null);
+  }, []);
+
+  const signOut = useCallback(async () => {
     try {
       await apiClient.logout();
-      setUser(null);
-      setWorkspaces([]);
-      // Drop all protected component/SWR state before another account signs in.
-      window.location.replace("/");
-    } catch {
-      setError(
-        "Sign-out could not be confirmed. Check your connection and try again.",
-      );
     } finally {
-      setBusy(false);
+      // Drop all protected component and SWR state before another account signs in.
+      window.location.replace("/");
     }
-  };
-  const visible = useMemo(
-    () =>
-      [...workspaces]
-        .filter((item) =>
-          item.name.toLowerCase().includes(search.toLowerCase()),
-        )
-        .sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
-    [workspaces, search],
-  );
-  const total = (key: "documents_count" | "tables_count") =>
-    workspaces.every((item) => item[key] != null)
-      ? workspaces.reduce((sum, item) => sum + item[key]!, 0).toLocaleString()
-      : "Unavailable";
+  }, []);
 
   if (restoring)
     return (
-      <main
-        id="main-content"
-        className="app-page flex items-center justify-center p-6"
-      >
+      <main id="main-content" className="flex min-h-dvh items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-8">
-          <BrandMark />
-          <LoadingState label="Restoring your workspace" />
+          <BrandLockup />
+          <LoadingState label="Restoring your casefiles" />
         </div>
       </main>
     );
   if (!user)
     return (
-      <div className="app-page flex min-h-dvh flex-col">
-        <header className="app-container py-6">
-          <BrandMark />
-        </header>
-        <main
-          id="main-content"
-          className="flex flex-1 items-center justify-center px-5 py-10"
-        >
-          <section className="auth-panel content-enter">
-            <p className="eyebrow">Workspace access</p>
-            <h1 className="page-title mt-3">
-              {isLogin ? "Welcome back" : "Create your account"}
-            </h1>
-            <p className="body-copy mt-2">
-              Investigate questions. Inspect the evidence.
-            </p>
-            {expired && (
-              <p
-                role="status"
-                className="mt-5 rounded-md border border-zinc-700 p-3 text-xs text-zinc-300"
-              >
-                Your session has ended. Sign in to continue.
-              </p>
-            )}
-            <form onSubmit={authenticate} aria-busy={busy} className="mt-8 space-y-5">
-              {!isLogin && (
-                <div>
-                  <label htmlFor="full-name" className="field-label">
-                    Full name
-                  </label>
-                  <input
-                    id="full-name"
-                    autoComplete="name"
-                    required
-                    value={fullName}
-                    onChange={(event) => setFullName(event.target.value)}
-                    className="field h-11"
-                  />
-                </div>
-              )}
-              <div>
-                <label htmlFor="email" className="field-label">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className="field h-11"
-                  placeholder="name@company.com"
-                  aria-describedby={error ? "auth-error" : undefined}
-                />
-              </div>
-              <div>
-                <label htmlFor="password" className="field-label">
-                  Password
-                </label>
-                <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete={isLogin ? "current-password" : "new-password"}
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="field h-11 pr-12"
-                  aria-describedby={error ? "auth-error" : undefined}
-                />
-                <button type="button" className="btn-icon absolute right-0.5 top-0.5" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-                </div>
-              </div>
-              {error && (
-                <div id="auth-error">
-                  <ErrorState title="Unable to sign in" message={error} />
-                </div>
-              )}
-              <button disabled={busy} className="btn-primary h-11 w-full">
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                <span>{busy ? (isLogin ? "Signing in…" : "Creating account…") : isLogin ? "Sign in" : "Create account"}</span>
-                <ArrowRight className="ml-auto h-4 w-4" />
-              </button>
-              <p role="status" className="sr-only">{busy ? (isLogin ? "Signing in" : "Creating account") : ""}</p>
-            </form>
-            <p className="mt-6 text-center text-xs text-zinc-400">
-              {isLogin ? "New to OmniOps?" : "Already have an account?"}{" "}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setError(null);
-                }}
-                className="ml-1 text-zinc-100 underline decoration-zinc-600 underline-offset-4"
-              >
-                {isLogin ? "Create an account" : "Sign in"}
-              </button>
-            </p>
-          </section>
-        </main>
-        <footer className="py-6 text-center text-xs text-zinc-400">
-          OmniOps · Evidence intelligence
-        </footer>
-      </div>
+      <>
+        {restoreError && <p className="sr-only" role="alert">{restoreError}</p>}
+        <SignIn expired={expired} onAuthenticated={(next) => { setExpired(false); setUser(next); }} />
+      </>
     );
-  return (
-    <div className="app-page">
-      <header className="app-topbar">
-        <div className="app-container flex h-16 items-center justify-between gap-4">
-          <BrandMark compact />
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden truncate text-xs text-zinc-400 sm:block">
-              {user.email}
-            </span>
-            <button
-              onClick={() => void logout()}
-              disabled={busy}
-              className="btn-ghost"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-      <main id="main-content" className="app-container py-7 sm:py-9">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="eyebrow">Overview</p>
-            <h1 className="page-title mt-2">Your workspaces</h1>
-            <p className="meta-copy mt-2">
-              Sources, investigations, and the evidence behind your decisions.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              setCreateOpen(true);
-              setCreateError(null);
-            }}
-            className="btn-primary"
-          >
-            <Plus className="h-4 w-4" />
-            Create workspace
-          </button>
-        </div>
-        <dl className="surface my-7 grid grid-cols-3 divide-x divide-zinc-700 p-5">
-          {[
-            {
-              label: "Workspaces",
-              value: workspaces.length.toLocaleString(),
-              icon: Layers3,
-            },
-            {
-              label: "Source files",
-              value: total("documents_count"),
-              icon: FileText,
-            },
-            { label: "Tables", value: total("tables_count"), icon: Database },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="px-3 first:pl-0 sm:px-6">
-              <dt className="flex items-center gap-2 text-xs text-zinc-400">
-                <Icon className="hidden h-3.5 w-3.5 sm:block" />
-                {label}
-              </dt>
-              <dd className="mt-2 text-xl font-medium tracking-tight sm:text-2xl">
-                {loading ? "—" : value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        {error && (
-          <div className="mb-5">
-            <ErrorState message={error} onRetry={() => void load()} />
-          </div>
-        )}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="section-title">Workspace directory</h2>
-          <label className="relative w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-3 h-3.5 w-3.5 text-zinc-400" />
-            <input
-              aria-label="Search workspaces"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search workspaces"
-              className="field h-10 pl-9"
-            />
-          </label>
-        </div>
-        {loading ? (
-          <LoadingState label="Loading workspaces" />
-        ) : visible.length === 0 ? (
-          <EmptyState
-            title={search ? "No matching workspaces" : "Start with a workspace"}
-            description={
-              search
-                ? "Try a different name or clear your search."
-                : "Keep related sources and investigations together. Create a workspace, then upload your first source."
-            }
-            action={
-              <button
-                className="btn-secondary"
-                onClick={() => (search ? setSearch("") : setCreateOpen(true))}
-              >
-                {search ? "Clear search" : "Create workspace"}
-              </button>
-            }
-          />
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-800">
-            <div className="hidden grid-cols-[minmax(0,1fr)_100px_100px_150px_24px] gap-4 border-b border-zinc-800 bg-[#151618] px-5 py-3 text-[11px] font-medium text-zinc-400 md:grid">
-              <span>Name</span>
-              <span className="text-right">Files</span>
-              <span className="text-right">Tables</span>
-              <span>Updated</span>
-              <span />
-            </div>
-            {visible.map((workspace) => (
-              <Link
-                href={`/workspaces/${workspace.id}`}
-                key={workspace.id}
-                className="directory-row group grid grid-cols-[minmax(0,1fr)_24px] items-center gap-4 border-b border-zinc-800 bg-[#181a1e] px-4 py-5 last:border-0 hover:bg-zinc-800/70 sm:px-5 md:grid-cols-[minmax(0,1fr)_100px_100px_150px_24px]"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-700">
-                    <Layers3 className="h-4 w-4 text-zinc-400" />
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-medium">
-                      {workspace.name}
-                    </h3>
-                    <p className="meta-copy mt-1 truncate">
-                      {workspace.description || "Sources and investigations"}
-                    </p>
-                    <p className="mt-1 text-[11px] text-zinc-400 md:hidden">
-                      {workspace.documents_count == null
-                        ? "Files not reported"
-                        : `${workspace.documents_count} files`}{" "}
-                      · {formatDate(workspace.updated_at)}
-                    </p>
-                  </div>
-                </div>
-                <span className="hidden text-right text-sm text-zinc-300 md:block">
-                  {workspace.documents_count ?? "—"}
-                </span>
-                <span className="hidden text-right text-sm text-zinc-300 md:block">
-                  {workspace.tables_count ?? "—"}
-                </span>
-                <time
-                  title={new Date(workspace.updated_at).toLocaleString()}
-                  className="hidden text-xs text-zinc-400 md:block"
-                >
-                  {formatDate(workspace.updated_at)}
-                </time>
-                <ArrowRight className="h-4 w-4 text-zinc-500 group-hover:text-zinc-100" />
-              </Link>
-            ))}
-          </div>
-        )}
-      </main>
-      <Dialog
-        compact
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create workspace"
-        description="Group the sources for an investigation."
-        busy={busy}
-      >
-        <form onSubmit={create} className="space-y-5">
-          <div>
-            <label htmlFor="workspace-name" className="field-label">
-              Workspace name
-            </label>
-            <input
-              id="workspace-name"
-              autoFocus
-              required
-              maxLength={255}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="e.g. Quarterly operating review"
-              className="field"
-              aria-describedby={createError ? "create-error" : undefined}
-            />
-          </div>
-          {createError && (
-            <div id="create-error">
-              <ErrorState message={createError} />
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setCreateOpen(false)}
-              disabled={busy}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button disabled={busy || !name.trim()} className="btn-primary">
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}Create
-              workspace
-            </button>
-          </div>
-        </form>
-      </Dialog>
-    </div>
-  );
+  return <Home user={user} onSignOut={() => void signOut()} />;
 }

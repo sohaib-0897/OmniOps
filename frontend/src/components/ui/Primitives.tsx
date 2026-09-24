@@ -71,7 +71,7 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border bg-zinc-950/40 px-2 py-1 text-[11px] font-medium capitalize",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border bg-canvas px-2 py-1 text-[11px] font-medium capitalize",
         tone,
       )}
     >
@@ -165,7 +165,7 @@ export function ErrorState({
             <button
               type="button"
               onClick={onRetry}
-              className="mt-2 underline underline-offset-4 hover:text-white"
+              className="mt-2 underline underline-offset-4 hover:text-ink"
             >
               Try again
             </button>

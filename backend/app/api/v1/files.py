@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.user import WorkspaceMembership, WorkspaceRole
 from app.models.document import SourceDocument, DocumentChunk, TabularDataset, ProcessingStatus
-from app.schemas.document import DocumentResponse, DocumentChunkResponse
+from app.schemas.document import DocumentResponse, DocumentChunkResponse, PassageMapResponse
 from app.schemas.common import ResponseEnvelope
 from app.api.deps import get_workspace_membership, require_role
 from app.ingestion.file_guard import process_and_save_upload
@@ -328,6 +328,61 @@ async def get_file_preview(
     )).scalars().all()
 
     return ResponseEnvelope.ok([DocumentChunkResponse.model_validate(c) for c in chunks])
+
+@router.get("/{file_id}/outline", response_model=ResponseEnvelope[PassageMapResponse])
+async def get_file_outline(
+    workspace_id: uuid.UUID,
+    file_id: uuid.UUID,
+    membership: WorkspaceMembership = Depends(get_workspace_membership),
+    db: AsyncSession = Depends(get_db)
+):
+    """Passage map for the source track: per-passage length and locators, no content."""
+    doc = (await db.execute(
+        select(SourceDocument.id, SourceDocument.modality, SourceDocument.processing_status).where(
+            SourceDocument.id == file_id,
+            SourceDocument.workspace_id == workspace_id
+        )
+    )).one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found in workspace."
+        )
+
+    # Length is computed in SQL so passage text never leaves the database.
+    rows = (await db.execute(
+        select(
+            DocumentChunk.id,
+            DocumentChunk.chunk_index,
+            func.length(DocumentChunk.content),
+            DocumentChunk.page_number,
+            DocumentChunk.audio_start_ms,
+            DocumentChunk.audio_end_ms,
+            DocumentChunk.chunk_metadata,
+        ).where(
+            DocumentChunk.source_id == file_id,
+            DocumentChunk.workspace_id == workspace_id,
+        ).order_by(DocumentChunk.chunk_index.asc())
+    )).all()
+
+    def _heading(metadata) -> str | None:
+        heading = (metadata or {}).get("heading") if isinstance(metadata, dict) else None
+        return heading[:200] if isinstance(heading, str) and heading else None
+
+    return ResponseEnvelope.ok(PassageMapResponse(
+        source_id=doc.id,
+        modality=doc.modality,
+        processing_status=doc.processing_status,
+        passage_count=len(rows),
+        chunk_id=[r[0] for r in rows],
+        chunk_index=[r[1] for r in rows],
+        char_length=[int(r[2] or 0) for r in rows],
+        page_number=[r[3] for r in rows],
+        audio_start_ms=[r[4] for r in rows],
+        audio_end_ms=[r[5] for r in rows],
+        heading=[_heading(r[6]) for r in rows],
+    ))
 
 @router.delete("/{file_id}", response_model=ResponseEnvelope[dict])
 async def delete_file(

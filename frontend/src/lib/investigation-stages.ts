@@ -3,98 +3,115 @@ import type {
   RuntimeTimelineEvent,
 } from "@/hooks/useInvestigationStream";
 
+/**
+ * The five stages follow the real runtime order. Planning and every tool step
+ * commit together in one transaction, and synthesis plus claim verification
+ * commit together in a second one, so the browser legitimately sees:
+ * created → (batch: plan, search, evidence) → (completed | failed).
+ */
 export const INVESTIGATION_STAGES = [
   {
     id: "understand",
-    label: "Understanding your request",
-    detail: "Planning an evidence-grounded investigation.",
+    label: "Understanding",
+    detail: "Planning and searching",
   },
   {
-    id: "investigate",
-    label: "Finding and reviewing evidence",
-    detail: "Searching and reviewing your workspace sources.",
+    id: "search",
+    label: "Searching",
+    detail: "Searching your sources",
+  },
+  {
+    id: "evidence",
+    label: "Evidence",
+    detail: "Reviewing retrieved passages",
+  },
+  {
+    id: "write",
+    label: "Writing",
+    detail: "Writing the brief, then checking every citation",
   },
   {
     id: "verify",
-    label: "Verifying findings",
-    detail: "Checking supported findings against recorded evidence.",
-  },
-  {
-    id: "prepare",
-    label: "Preparing your answer",
-    detail: "Organizing verified findings into the final analysis.",
-  },
-  {
-    id: "complete",
-    label: "Analysis complete",
-    detail: "The evidence-grounded report is ready.",
+    label: "Verification",
+    detail: "Citations checked against their passages",
   },
 ] as const;
 
 export type InvestigationStage = (typeof INVESTIGATION_STAGES)[number];
+export type StageId = InvestigationStage["id"];
 
 export interface InvestigationStageSnapshot {
+  /** Index of the current (or failed) stage; 5 when completed. */
   index: number;
   current: InvestigationStage;
   previous: InvestigationStage | null;
   next: InvestigationStage | null;
   detail: string;
   terminal: "completed" | "failed" | "cancelled" | null;
+  /** True once the planning/search batch has been persisted and received. */
+  batchReceived: boolean;
+  /** False for a stopped run whose stopping stage has not been received (e.g. no SSE replay yet). */
+  stageKnown: boolean;
 }
 
-const executionStates = new Set([
-  "ready",
-  "running",
-  "executing",
-  "observing",
-  "replanning",
+const searchStates = new Set(["ready", "running", "executing"]);
+const evidenceStates = new Set(["observing", "verifying", "replanning"]);
+
+const batchEventTypes = new Set([
+  "plan.created",
+  "step.started",
+  "tool.started",
+  "tool.completed",
+  "tool.failed",
+  "observation.created",
+  "step.verified",
+  "step.failed",
+  "replan.started",
+  "plan.revised",
+  "contradiction.created",
+  "synthesis.started",
+  "synthesis.completed",
+  "investigation.completed",
 ]);
+
+function stateIndex(state: string, code?: string | null): number | null {
+  const value = state.toLowerCase();
+  if (value === "created" || value === "planning" || value === "idle") return 0;
+  if (searchStates.has(value)) return 1;
+  if (evidenceStates.has(value)) return 2;
+  if (value === "synthesizing") return code === "EVIDENCE_INVALID" ? 4 : 3;
+  return null;
+}
 
 function eventStage(event: RuntimeTimelineEvent): number | null {
   const type = event.type.toLowerCase();
   const payload = event.payload || {};
-  // A failure rolls back uncommitted progress events, so the failure event
-  // carries the runtime state it actually stopped in.
-  const target = String(
-    payload.to || payload.status || payload.failed_state || "",
-  ).toLowerCase();
-  const reason = String(payload.reason || "").toLowerCase();
-
-  if (
-    type === "synthesis.started" ||
-    type === "synthesis.completed" ||
-    target === "synthesizing"
-  )
-    return 3;
-  if (
-    target === "verifying" &&
-    (reason === "all_steps_complete" || reason === "verified_outputs")
-  )
-    return 2;
-  if (
-    executionStates.has(target) ||
-    [
-      "plan.created",
-      "step.started",
-      "tool.started",
-      "tool.completed",
-      "tool.failed",
-      "observation.created",
-      "step.verified",
-      "step.failed",
-      "replan.started",
-      "plan.revised",
-      "contradiction.created",
-    ].includes(type)
-  )
-    return 1;
-  if (
-    target === "planning" ||
-    type === "investigation.created" ||
-    type === "investigation.started"
-  )
-    return 0;
+  if (type === "investigation.failed") {
+    // A failure rolls back uncommitted progress, so it carries the state it
+    // actually stopped in.
+    const failed = typeof payload.failed_state === "string" ? payload.failed_state : "";
+    return stateIndex(failed, typeof payload.code === "string" ? payload.code : null) ?? 0;
+  }
+  if (type === "synthesis.started" || type === "synthesis.completed") return 3;
+  const target = String(payload.to || payload.status || "").toLowerCase();
+  if (target) {
+    const resolved = stateIndex(target);
+    if (resolved != null) return resolved;
+  }
+  if (["tool.started", "tool.completed", "tool.failed", "step.started"].includes(type)) return 1;
+  if (["observation.created", "step.verified", "step.failed", "replan.started", "plan.revised", "contradiction.created"].includes(type)) return 2;
+  if (type === "plan.created" || type === "investigation.created" || type === "investigation.started") return 0;
   return null;
+}
+
+export function batchReceived(timeline: RuntimeTimelineEvent[]): boolean {
+  return timeline.some((event) => {
+    if (batchEventTypes.has(event.type)) return true;
+    // Any persisted transition past planning belongs to the saved batch.
+    if (event.type !== "state.changed") return false;
+    const to = String(event.payload?.to || "").toLowerCase();
+    return Boolean(to) && !["created", "planning"].includes(to);
+  });
 }
 
 function stageFromTimeline(timeline: RuntimeTimelineEvent[]): number | null {
@@ -106,39 +123,16 @@ function stageFromTimeline(timeline: RuntimeTimelineEvent[]): number | null {
 }
 
 function activeStageIndex(state: InvestigationStreamState): number {
-  const timelineStage = stageFromTimeline(state.timeline);
-  if (state.status === "synthesizing") return 3;
-  if (state.status === "verifying") {
-    const latestTransition = [...state.timeline]
-      .reverse()
-      .find(
-        (event) =>
-          event.type === "state.changed" &&
-          String(event.payload?.to || "").toLowerCase() === "verifying",
-      );
-    const reason = String(latestTransition?.payload?.reason || "").toLowerCase();
-    if (latestTransition && reason && !["all_steps_complete", "verified_outputs"].includes(reason)) return 1;
-    return 2;
+  const fromState = stateIndex(state.status, state.failureCode);
+  const fromTimeline = stageFromTimeline(state.timeline);
+  if (state.status === "failed") {
+    const failure = [...state.timeline].reverse().find((event) => event.type === "investigation.failed");
+    return failure ? eventStage(failure) ?? 0 : fromTimeline ?? 0;
   }
-  if (executionStates.has(state.status)) return 1;
-  if (["created", "planning", "idle"].includes(state.status)) return 0;
-  return timelineStage ?? 0;
-}
-
-function liveDetail(
-  stageIndex: number,
-  timeline: RuntimeTimelineEvent[],
-): string {
-  const latest = timeline[timeline.length - 1];
-  if (stageIndex === 1 && latest) {
-    if (latest.type === "observation.created")
-      return "Reviewing the source material returned by the investigation.";
-    if (["replan.started", "plan.revised"].includes(latest.type))
-      return "Refining the investigation plan from recorded results.";
-    if (latest.type.startsWith("tool."))
-      return "Searching and analyzing your workspace sources.";
-  }
-  return INVESTIGATION_STAGES[stageIndex].detail;
+  if (state.status === "cancelled") return fromTimeline ?? 0;
+  // When the batch has arrived, Writing is current even if the status poll lags.
+  if (batchReceived(state.timeline) && (fromState ?? 0) < 3 && fromTimeline != null && fromTimeline >= 3) return 3;
+  return Math.max(fromState ?? 0, fromTimeline ?? 0);
 }
 
 /**
@@ -151,17 +145,25 @@ export function deriveInvestigationStage(
   const terminal = ["completed", "failed", "cancelled"].includes(state.status)
     ? (state.status as InvestigationStageSnapshot["terminal"])
     : null;
-  const index = terminal === "completed" ? 4 : activeStageIndex(state);
+  const index = terminal === "completed" ? INVESTIGATION_STAGES.length : Math.min(activeStageIndex(state), INVESTIGATION_STAGES.length - 1);
+  const clamped = Math.min(index, INVESTIGATION_STAGES.length - 1);
   return {
     index,
-    current: INVESTIGATION_STAGES[index],
-    previous: index > 0 ? INVESTIGATION_STAGES[index - 1] : null,
-    next:
-      terminal || index >= INVESTIGATION_STAGES.length - 1
-        ? null
-        : INVESTIGATION_STAGES[index + 1],
-    detail: liveDetail(index, state.timeline),
+    current: INVESTIGATION_STAGES[clamped],
+    previous: clamped > 0 ? INVESTIGATION_STAGES[clamped - 1] : null,
+    next: terminal || clamped >= INVESTIGATION_STAGES.length - 1 ? null : INVESTIGATION_STAGES[clamped + 1],
+    detail: INVESTIGATION_STAGES[clamped].detail,
     terminal,
+    // Planning through synthesis commit as one transaction, so a persisted (polled)
+    // state past planning also proves the batch is saved, even without SSE events.
+    batchReceived: batchReceived(state.timeline) || terminal === "completed" || (!terminal && (stateIndex(state.status) ?? 0) >= 1),
+    // Only the persisted failure event records where a failed run stopped; polled status cannot.
+    stageKnown:
+      terminal === "failed"
+        ? state.timeline.some((event) => event.type === "investigation.failed")
+        : terminal === "cancelled"
+          ? stageFromTimeline(state.timeline) != null
+          : true,
   };
 }
 
@@ -178,4 +180,52 @@ export function runtimeDuration(timeline: RuntimeTimelineEvent[]): number | null
 export function observedInvestigationStages(timeline: RuntimeTimelineEvent[]): InvestigationStage[] {
   const observed = new Set(timeline.map(eventStage).filter((index): index is number => index != null));
   return INVESTIGATION_STAGES.filter((_, index) => observed.has(index));
+}
+
+const eventLabels: Record<string, string> = {
+  "investigation.created": "Investigation created",
+  "investigation.started": "Investigation started",
+  "plan.created": "Plan created",
+  "plan.revised": "Plan revised",
+  "step.started": "Step started",
+  "step.verified": "Step verified",
+  "step.failed": "Step failed",
+  "tool.started": "Tool started",
+  "tool.completed": "Tool completed",
+  "tool.failed": "Tool failed",
+  "observation.created": "Observation saved",
+  "replan.started": "Replanning",
+  "contradiction.created": "Contradiction recorded",
+  "synthesis.started": "Writing started",
+  "synthesis.completed": "Brief written",
+  "investigation.completed": "Investigation completed",
+  "investigation.failed": "Investigation stopped",
+  "investigation.cancelled": "Investigation cancelled",
+};
+
+const toolLabels: Record<string, string> = {
+  hybrid_document_search: "Search completed",
+  tabular_sql_query: "Query completed",
+  python_sandbox: "Calculation completed",
+  web_fetch: "Web fetch completed",
+};
+
+/** A short, safe label for a persisted event. Payload text is never echoed. */
+export function describeEvent(event: RuntimeTimelineEvent): { label: string; detail: string | null } {
+  const payload = event.payload || {};
+  const tool = typeof payload.tool === "string" && /^[a-z0-9_.-]{1,64}$/i.test(payload.tool) ? payload.tool : null;
+  if (event.type === "tool.completed" && tool) return { label: toolLabels[tool] ?? "Tool completed", detail: tool };
+  if (event.type === "state.changed") {
+    const to = String(payload.to || "").toLowerCase();
+    if (to === "synthesizing") return { label: "Writing started", detail: null };
+    if (to === "executing") return { label: "Search started", detail: null };
+    if (to === "observing") return { label: "Reviewing evidence", detail: null };
+    if (to === "planning") return { label: "Planning", detail: null };
+    return { label: "State changed", detail: /^[a-z_]{1,32}$/.test(to) ? to : null };
+  }
+  if (event.type === "plan.created") {
+    const steps = Array.isArray(payload.steps) ? payload.steps.length : typeof payload.step_count === "number" ? payload.step_count : null;
+    return { label: "Plan created", detail: steps != null ? `${steps} ${steps === 1 ? "step" : "steps"}` : null };
+  }
+  return { label: eventLabels[event.type] ?? event.type, detail: tool };
 }

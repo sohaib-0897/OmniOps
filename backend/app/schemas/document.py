@@ -38,6 +38,24 @@ class DocumentChunkResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class PassageMapResponse(BaseModel):
+    """Columnar passage outline for one source; never carries passage text.
+
+    Index ``i`` of every list describes the same passage. Lists are ordered by
+    ``chunk_index`` ascending.
+    """
+    source_id: uuid.UUID
+    modality: str
+    processing_status: str
+    passage_count: int
+    chunk_id: List[uuid.UUID]
+    chunk_index: List[int]
+    char_length: List[int]
+    page_number: List[Optional[int]]
+    audio_start_ms: List[Optional[int]]
+    audio_end_ms: List[Optional[int]]
+    heading: List[Optional[str]]
+
 class TabularDatasetResponse(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID

@@ -39,6 +39,21 @@ class InvestigationResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class InvestigationSummary(BaseModel):
+    id: uuid.UUID
+    objective: str
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class InvestigationHistoryPage(BaseModel):
+    items: List[InvestigationSummary]
+    total: int
+    limit: int
+    offset: int
+
 class InvestigationCancelResponse(BaseModel):
     investigation_id: uuid.UUID
     status: str = "cancelled"
