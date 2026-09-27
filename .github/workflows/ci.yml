@@ -14,7 +14,12 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U omniops -d omniops_test" --health-interval 5s --health-timeout 5s --health-retries 10
-    env: { DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test", ENVIRONMENT: test, SECRET_KEY: ci-only-secret-with-at-least-thirty-two-bytes, PYTHONPATH: "..:." }
+    env:
+      DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test"
+      POSTGRES_TEST_DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test"
+      ENVIRONMENT: test
+      SECRET_KEY: ci-only-secret-with-at-least-thirty-two-bytes
+      PYTHONPATH: "..:."
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -29,12 +34,6 @@ jobs:
           docker build --build-arg BACKEND_IMAGE=omniops-backend:ci -f docker/Dockerfile.sandbox -t omniops-python-sandbox:2026.09.05 .
       - run: python -m pytest tests -q --disable-warnings
         working-directory: backend
-      - run: python -m pytest tests/test_postgres_hybrid_retrieval.py -q --disable-warnings
-        working-directory: backend
-        env: { POSTGRES_TEST_DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test" }
-      - run: python -m pytest tests/test_phase3_runtime.py tests/test_phase3_live_concurrency.py tests/test_phase3_lifecycle_events.py tests/test_phase3_crash_recovery.py tests/test_phase3_closure_gates.py -q --disable-warnings
-        working-directory: backend
-        env: { POSTGRES_TEST_DATABASE_URL: "postgresql+asyncpg://omniops:testpass@127.0.0.1:5432/omniops_test" }
       - run: python -m evals.runner
       # Semantic embedding evaluation requires a separately configured compatible
       # provider credential. PR CI verifies PostgreSQL retrieval above and the
@@ -52,6 +51,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
       - run: npm ci
+      - run: node --test ../scripts/ui_frontend_tests.cjs
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run build

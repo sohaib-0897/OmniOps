@@ -1,208 +1,98 @@
 # OmniOps
 
-<p align="center">
-  <strong>Autonomous Business Investigations with Inspectable Evidence & Durable Agent Execution</strong>
-</p>
+OmniOps is a source grounded investigation workspace for business documents. It ingests files, retrieves relevant passages, runs a persisted investigation, and presents a brief with links back to the source. The engineering focus is on inspectable evidence, recovery after worker interruption, and explicit failure when a provider or source is unavailable.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Next.js%2015-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" />
-  <img src="https://img.shields.io/badge/PostgreSQL%2016-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/pgvector-4169E1?style=flat-square" alt="pgvector" />
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Python%203.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/Tests-212%2F212%20Passed-brightgreen?style=flat-square" alt="Tests Passed" />
-</p>
+The application has a Next.js interface, a FastAPI API, a separate worker, PostgreSQL with pgvector, and an authenticated container runner for Python calculations. Planning and synthesis use a configured text model; they are not deterministic accuracy guarantees.
 
----
+## Screenshots
 
-## 🌟 About OmniOps
+Captured from the running local application on 2026-09-27 at 1440 × 900. The source is an authored fictional PDF; the brief was produced by the configured local Ollama model during this review.
 
-OmniOps is an enterprise-grade AI investigation platform engineered for operational and financial analysis. Unlike conventional AI chat tools that can hallucinate unverified numbers, OmniOps is built on an **evidence-first architecture**: every claim is linked to verbatim source citations, and every numerical calculation is verified through deterministic sandboxed execution with canonical cryptographic hashing.
+![Completed investigation with findings and passage citations](docs/screenshots/investigation-brief.png)
 
-### Key Highlights
-- 🔍 **Hybrid Vector & Lexical Retrieval:** Combines pgvector cosine similarity with PostgreSQL Full-Text Search (FTS) through Reciprocal Rank Fusion (RRF with $k=60$).
-- 🛡️ **Seven-Stage Evidence Provenance:** Enforces unbroken lineage from `VerifiedClaim` &rarr; `EvidenceItem` &rarr; `DocumentChunk` &rarr; `SourceDocument`, with automated cascading invalidation if sources are modified or removed.
-- ⚡ **Durable Agent Runtime & Lease Fencing:** State-machine execution backed by PostgreSQL row leases preventing split-brain worker overwrites, with monotonic Server-Sent Events (SSE) sequencing for lossless streaming.
-- 🔒 **Defense-in-Depth Sandboxing:** Non-root Python code execution with zero network access (`--net=none`), disposable tmpfs filesystems, and strict memory/CPU/process bounds.
-- 📑 **Multimodal Ingestion Pipeline:** High-fidelity ingestion of PDFs, spreadsheets, audio recordings, and images using PyMuPDF, DuckDB, Tesseract OCR, and Gemini multimodal models.
+![Extracted PDF passages and source locations in the reader](docs/screenshots/source-passages.png)
 
-The platform architecture, verification results, and design constraints are detailed in the authoritative [FINAL_AUDIT.md](FINAL_AUDIT.md).
+## Engineering highlights
 
-[Engineering Walkthrough](docs/ENGINEERING.md) · [Local Setup](#run-locally) · [Verification](#verification) · [Operations](OPERATIONS.md) · [Final Audit](FINAL_AUDIT.md)
+| Problem | Implementation |
+| --- | --- |
+| Recover work after a worker interruption | Investigation state, attempts, leases, and events are stored in PostgreSQL. Lease fencing prevents a stale worker from finalizing another worker's run. |
+| Retrieve within a workspace | SQL filters candidates by workspace before combining PostgreSQL full text and optional pgvector results with reciprocal rank fusion. Lexical search remains available when embeddings are unavailable. |
+| Make conclusions inspectable | Evidence records retain quotes and source locations. Claim validation resolves cited evidence through its chunk, source, investigation, and workspace; calculation records carry a canonical reproducibility hash. |
+| Execute calculations outside the API process | The worker calls an authenticated runner. Its disposable payload container has no network access and has resource limits; the API container has no Docker socket. |
+| Reconnect to a running investigation | Database events support SSE replay by cursor. The frontend uses bearer headers for the stream and deduplicates replayed events. |
 
-![OmniOps workspace with source uploads, investigation composer and runtime trace](docs/images/workspace.png)
-
----
-
-## Core Capabilities
-
-| Capability | Implementation | Key Invariants |
-|---|---|---|
-| **Hybrid Retrieval** | PostgreSQL 16 + pgvector cosine similarity and Full-Text Search (FTS) fused via Reciprocal Rank Fusion (RRF with $k=60$). | Database-level SQL predicates enforce strict workspace tenant isolation; HNSW and GIN index utilization verified in query plans. |
-| **Multimodal Ingestion** | Native PDF text extraction (PyMuPDF), Tesseract OCR for scanned pages, Gemini Interactions API for semantic image vision and audio transcription. | Modality provenance and verbatim chunk offsets preserved; unavailable providers report explicit status without synthetic fallback. |
-| **Evidence Lineage** | Seven-stage verification linking `VerifiedClaim` -> `EvidenceItem` -> `DocumentChunk` -> `SourceDocument`. | Broken lineage, cross-workspace references, or ungrounded proposals are rejected; source deletion cascades to mark claims `REJECTED` (`SOURCE_DELETED`). |
-| **Calculation Integrity** | Python math and DuckDB analytical queries executed in isolated sandboxes. | Canonical sort-keyed JSON hashing (`calculation_reproducibility_hash`) guarantees identical reproducible calculation identities locally and remotely. |
-| **Durable Agent Runtime** | State-machine runtime with heartbeated worker leases, atomic database scheduling, and crash recovery. | Lease fencing prevents stale workers from corrupting synthesis reports or mutating execution attempts. |
-| **Commit-Safe SSE** | Real-time Server-Sent Events with monotonic delivery sequencing (`delivery_sequence`). | Prevents event loss or skips across out-of-order transaction commits; supports clean client reconnection and cursor replay. |
-| **Sandbox Isolation** | Authenticated runner spawning ephemeral containerized Python runners. | Non-root UID 65532, read-only root filesystems, disposable tmpfs, `--net=none` network isolation, and CPU/memory/process caps. |
-| **Session Security** | Database-backed sessions, memory-only JWT access tokens, HttpOnly refresh cookies with SHA-256 rotation and replay family revocation. | Logout validates refresh-cookie secret against database session before revocation; SSRF policy strictly validates IP ranges on every redirect hop. |
-
----
+The [engineering walkthrough](docs/ENGINEERING.md) links these paths to the relevant code and explains their tradeoffs.
 
 ## Architecture
 
-```text
-Next.js (App Router / TypeScript / Tailwind)
-      ↓ Authenticated REST / Bearer-header SSE
-FastAPI API Replicas (Port 8000 / Non-root)
-      ↓ SQL Queries & Predicates
-PostgreSQL 16 + pgvector (Sessions, Leases, Vector/FTS Chunks, Events)
-      ↓ Leased Execution & Task Claiming
-Durable Agent Runtime (Worker / State Machine / Lease Fencing)
-      ↓ Tool Invocation
-Tool Registry (Hybrid Document Search, DuckDB, Python Sandbox)
-      ↓ Lineage Validation & Canonical Hash
-Evidence Verification (Seven-stage provenance & cascade invalidation)
-      ↓ Modality Handlers
-Gemini / Multimodal (Image vision, transcription, Tesseract OCR)
-      ↓ Bearer-authenticated /v1/execute
-Sandbox Runner (Ephemeral non-root container, --net=none, resource limits)
+```mermaid
+flowchart LR
+    UI[Next.js workspace] -->|REST and SSE| API[FastAPI]
+    API --> DB[(PostgreSQL + pgvector)]
+    API --> Files[(Source storage)]
+    Worker[Investigation worker] --> DB
+    Worker -->|planning and synthesis| LLM[Configured text provider]
+    Worker -->|retrieval and evidence| DB
+    Worker -->|Python execution| Runner[Authenticated sandbox runner]
+    Runner --> Payload[Isolated payload container]
 ```
 
-**Tech Stack:** Python 3.12, FastAPI, async SQLAlchemy, Alembic, PostgreSQL 16 / pgvector, DuckDB, PyArrow, Pydantic v2, PyMuPDF, pytesseract, Next.js 15, React 19, TypeScript, Tailwind CSS, Docker, and Caddy.
+The API accepts an upload and stores a source record. Ingestion extracts text and source locations; supported media can use OCR or configured multimodal providers. The worker claims an investigation, asks the text provider for a plan, dispatches registered retrieval or calculation tools, records observations and evidence, then validates and persists the brief. The browser reads saved state and events, including after reconnecting. [Runtime](backend/app/agent/service.py), [retrieval](backend/app/rag/hybrid_search.py), and [evidence validation](backend/app/evidence/validator.py) are the primary implementation entry points.
 
----
+## Verified results
 
-## Run Locally
+These checks were run on 2026-09-27 from an isolated checkout containing the changes in this review:
 
-### Prerequisites
-- Python 3.12+
-- Node.js 20+
-- Docker & Docker Compose (optional for local SQLite, required for full PostgreSQL/pgvector and sandbox execution)
-- Ollama for free local planning and synthesis, or credentials for an explicitly selected hosted provider
+| Check | Result | Scope |
+| --- | --- | --- |
+| `python -m pytest tests -q --disable-warnings` | 245 passed, 0 skipped | Run in `backend/` against a fresh, migrated pgvector test database with `POSTGRES_TEST_DATABASE_URL` set. |
+| `node --test scripts/ui_frontend_tests.cjs` | 41 passed | Frontend component and behavior checks. |
+| `python -m evals.runner` | 15/15 scenarios passed | Authored deterministic scenarios; factual precision, citation precision, and hallucination rate remain `NOT_MEASURED`. |
+| `npx tsc --noEmit`, `npm run lint`, `npm run build` | Passed | Run in `frontend/`; Next.js 15.5.25 build completed. |
+| Local application | Ready and HTTP 200 | Fresh isolated Compose stack: database, pgvector, migration, runner, and Ollama readiness checks reported ready. |
+| Sample investigation | Completed | A fresh authored text source became ready; the worker saved a brief with five claims. The screenshots above show a separate completed PDF run with nine cited claims. |
 
-### Local planning and synthesis with Ollama
+The [Phase 7 evidence index](phase7-evidence/README.md) and [final audit](FINAL_AUDIT.md) retain earlier PostgreSQL, migration, security, and failure injection results. Those records describe their own test environments and should not be read as results of the current run.
 
-This machine profile (16 GB RAM and a 6 GB RTX 4050 Laptop GPU) is well suited to
-`qwen3:4b` (about 2.5 GB quantized) as the default. `qwen3:1.7b` is the
-lower-resource alternative; `qwen3:8b` may improve quality but is more likely to
-spill beyond 6 GB VRAM and run more slowly.
+## Running locally
 
-1. Install [Ollama](https://ollama.com/download) and keep its local service running.
-2. Pull one model: `ollama pull qwen3:4b`.
-3. Set `LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen3:4b`, and set
-   `OLLAMA_BASE_URL=http://host.docker.internal:11434` for Docker Desktop. Use
-   `http://127.0.0.1:11434` when the backend and worker run directly on the host.
-4. Start OmniOps and request `/api/v1/readiness`; `checks.llm_provider.status`
-   must be `ready` before running an investigation.
-5. Upload a source, wait for `READY`, then create an investigation normally.
+The supported full stack is [the Ubuntu Compose profile](docker-compose.ubuntu.yml): PostgreSQL, migration job, API, worker, frontend, local sandbox runner, and Caddy on port 80. Docker with Compose and a reachable text provider are required for an investigation. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`.
 
-Provider selection is explicit and never falls back after failure. Ollama handles
-text planning, tool decisions, and synthesis only. Tesseract OCR remains local;
-Gemini credentials and compatible Gemini models are still required for the
-existing image-vision and audio-transcription capabilities. Local generative
-models are not used as embedding models, so PostgreSQL lexical retrieval remains
-available when semantic embeddings are unavailable.
+1. Copy [`.env.example`](.env.example) to `.env`. Set distinct random values for `POSTGRES_PASSWORD`, `SECRET_KEY`, and `SANDBOX_RUNNER_TOKEN`; set `DATABASE_URL` with the same database password. For local HTTP, set `CORS_ORIGINS=["http://localhost"]`, `ALLOW_INSECURE_HTTP=true`, and `COOKIE_SECURE=false`. Keep `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL=http://host.docker.internal:11434` for the local model.
+2. Run:
 
-### 1. Backend Setup
+   ```bash
+   docker compose --env-file .env -f docker-compose.ubuntu.yml config --quiet
+   docker compose --env-file .env -f docker-compose.ubuntu.yml build backend frontend
+   docker compose --env-file .env -f docker-compose.ubuntu.yml build sandbox-image sandbox-runner
+   docker compose --env-file .env -f docker-compose.ubuntu.yml up --no-build -d
+   ```
 
-```bash
-git clone https://github.com/sohaib-0897/OmniOps.git
-cd OmniOps/backend
-python -m venv .venv
-```
+3. Open `http://localhost`. Check `http://localhost/api/v1/readiness` before starting an investigation. Upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
 
-Activate the environment:
-- **Linux/macOS:** `source .venv/bin/activate`
-- **Windows (PowerShell):** `.venv\Scripts\Activate.ps1`
+The runner in this local profile controls the Docker daemon. [Deployment notes](DEPLOY_UBUNTU.md) explain the profile and its network boundary. The production profile expects a separately hosted runner.
 
-Install dependencies and run the API:
+## Testing and repository map
 
-```bash
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
-```
+Run the commands in **Verified results** from the repository root, except backend tests, which run in `backend/`, and the three frontend commands, which run in `frontend/`. PostgreSQL integration tests need a dedicated migrated pgvector test database and `POSTGRES_TEST_DATABASE_URL`; see [.github/workflows/ci.yml](.github/workflows/ci.yml) and the [fresh-checkout audit](docs/REPRODUCIBILITY_AUDIT.md) for that setup.
 
-By default, the backend operates in development mode. To run against PostgreSQL with pgvector, set `DATABASE_URL` and run migrations:
+| Path | Purpose |
+| --- | --- |
+| `backend/app/` | API, ingestion, retrieval, evidence validation, worker, and provider adapters |
+| `backend/alembic/` | Database migrations |
+| `frontend/src/` | Workspace interface and API/SSE client |
+| `docker/`, `docker-compose*.yml` | Images and deployment profiles |
+| `backend/tests/`, `evals/`, `scripts/` | Regression tests, authored scenarios, and operational probes |
 
-```bash
-alembic -c alembic.ini upgrade head
-```
+## Limitations
 
-### 2. Frontend Setup
+- Citation validation checks reference integrity and quoted text; it does not prove that a model's interpretation is true. No independent real world accuracy or hallucination rate is measured.
+- Semantic retrieval quality has not been evaluated with a compatible live embedding credential. Lexical PostgreSQL retrieval can operate without embeddings.
+- Vision and audio paths require configured external providers; a readiness capability label does not establish their accuracy.
+- The local runner shares the host Docker control plane. Dedicated runner hosting and external TLS ingress are deployment work, and GitHub hosted CI was not independently verified during this review.
+- Python dependencies use lower bounds rather than a lockfile. The fresh install in this review passed, but a future resolver run can select newer versions and should be checked again.
 
-In a separate terminal:
+## License
 
-```bash
-cd OmniOps/frontend
-npm ci
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to access the workspace interface. Interactive API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
-
-### 3. Docker Compose (Full Local Topology)
-
-To run the complete production-like stack locally:
-
-```bash
-docker compose --env-file .env.example -f docker-compose.yml up --build
-```
-
----
-
-## Verification & Test Results
-
-The platform enforces zero unexplained skips, zero failures, and comprehensive regression coverage across all core systems:
-
-| Verification Suite | Target / Command | Result |
-|---|---|---|
-| **Full Backend Suite** | `pytest backend/tests -q --disable-warnings` | **212 passed, 0 failed, 0 skipped** (95.81s) |
-| **Benchmark Evals** | `python -m evals.runner` | **15 / 15 passed (100%)** |
-| **PostgreSQL Retrieval** | `pytest backend/tests/test_postgres_hybrid_retrieval.py` | **6 passed** (FTS, vector distance, RRF, HNSW/GIN plans) |
-| **Phase 1 Integrity** | `pytest backend/tests/test_phase1_integrity.py` | **7 passed** |
-| **Phase 3 Runtime** | `pytest backend/tests/test_phase3_*.py` | **27 passed** (leases, recovery, fencing, idempotency) |
-| **Phase 4 Security** | `pytest backend/tests/test_phase4_*.py ...` | **74 passed** (runner boundary, SSRF, sandbox container) |
-| **Phase 5 Multimodal** | `pytest backend/tests/test_phase5_*.py` | **27 passed** (20 multimodal hermetic, 7 provider contract) |
-| **Phase 6 Platform** | `pytest backend/tests/test_phase6_platform.py` | **16 passed** (auth rotation, cookies, SSE backpressure) |
-| **Final Closure Tests** | `pytest backend/tests/test_final_audit_closure.py` | **5 passed** (provider planning, canonical hashes, cascade) |
-| **Frontend TypeScript** | `npx tsc --noEmit` (in `frontend/`) | **Exit code 0 (0 errors)** |
-| **Frontend Linter** | `npm run lint` (in `frontend/`) | **Exit code 0 (0 warnings, 0 errors)** |
-| **Frontend Production Build** | `npm run build` (in `frontend/`) | **Exit code 0 (Next.js optimized build)** |
-| **Frontend Unit Tests** | `node --test scripts/ui_frontend_tests.cjs` | **8 passed, 0 failed** |
-| **Python Security Audit** | `pip-audit -r backend/requirements.txt` | **0 known vulnerabilities** |
-| **Node Security Audit** | `npm audit` (in `frontend/`) | **0 vulnerabilities** |
-| **SSE Replay Probe** | `python scripts/final_sse_probe.py` | **PASSED** (ordering, late commits, A/B persistence) |
-
----
-
-## Production Topology & Security
-
-- **Container Boundaries:** API replicas A and B, background worker, and frontend containers run as non-root (UID 10001), have read-only root filesystems with temporary tmpfs mounts, and carry **no Docker socket**.
-- **Runner Boundary:** The sandbox runner operates on a separate port (9100) requiring bearer token authentication. Container executions run under UID 65532 with `--net=none` and strict CPU/memory/process limits.
-- **Migration Head:** Database schema version is tracked under Alembic head `20260912_final_audit_closure` with reversible upgrade/downgrade paths.
-- **Observability:** Bounded Prometheus metric labels prevent path-based cardinality attacks by grouping unmapped routes under `route="__unmatched__"`.
-
----
-
-## Known External Limitations
-
-As documented in [FINAL_AUDIT.md](FINAL_AUDIT.md), the following operational prerequisites apply to production deployment:
-1. **Dedicated Rootless Runner Host:** In cloud production, the sandbox runner service requires hosting on an external, rootless container engine with network isolation rather than sharing the local daemon.
-2. **Hosted CI Execution:** Workflows are verified locally; remote execution depends on triggering the configured GitHub Actions runners.
-3. **Semantic Embedding Quality Evaluation:** Vector search logic and RRF fusion are verified on PostgreSQL; benchmark quality measurement of live embedding generation requires supplying a compatible third-party embedding credential.
-4. **Cloud Deployment:** Local multi-container topologies and readiness gates were verified; live cloud infrastructure deployment (AWS/GCP/Kubernetes with managed TLS ingress) remains an operational task.
-
----
-
-## CV-Safe Project Summary
-
-- Built a full-stack, multimodal business intelligence investigation platform using FastAPI, Next.js, and PostgreSQL.
-- Implemented hybrid search combining pgvector cosine embeddings with PostgreSQL Full-Text Search via Reciprocal Rank Fusion (RRF), verified by database query plans with HNSW and GIN indexes.
-- Designed a durable state-machine runtime with worker lease fencing, atomic database scheduling, and crash recovery.
-- Engineered commit-safe Server-Sent Events (SSE) streaming with monotonic sequence tracking, eliminating event loss across out-of-order transaction commits.
-- Built a strict seven-stage evidence lineage verification system with canonical JSON calculation reproducibility hashing and cascading deletion invalidation.
-- Implemented security controls including HttpOnly refresh token rotation with replay detection, multi-tenant workspace predicates, SSRF protection with IP range filtering, and containerized Python sandbox isolation.
-- Built Dockerized multi-container topologies enforcing non-root users, read-only root filesystems, dropped capabilities, and health check gates.
+No project license is present in this repository.

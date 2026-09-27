@@ -1,49 +1,23 @@
-# Engineering walkthrough
+# Engineering notes
 
-This guide is a short route through the code and the decisions worth discussing in a technical interview. Capability implementation and end-to-end verification are distinguished deliberately.
+This is a code reading route for the implemented investigation path. The [README](../README.md) covers setup and current checks; the [Phase 7 audit](../PHASE_7_FINAL_AUDIT.md) and [later closure record](../FINAL_AUDIT.md) preserve the adversarial findings and follow-up evidence.
 
-## 1. Retrieval belongs in the database
+## Retrieval
 
-Start with [hybrid_search.py](../backend/app/rag/hybrid_search.py). The production path restricts workspace/source candidates in SQL, combines PostgreSQL full-text and vector retrieval through reciprocal rank fusion, and returns bounded results. [Retrieval integration tests](../backend/tests/test_postgres_hybrid_retrieval.py) exercise PostgreSQL rather than substituting Python ranking.
+Start with [hybrid_search.py](../backend/app/rag/hybrid_search.py) and the [PostgreSQL integration tests](../backend/tests/test_postgres_hybrid_retrieval.py). The query restricts candidates by workspace in SQL, builds lexical candidates with PostgreSQL full text, optionally adds pgvector candidates, and fuses ranks with reciprocal rank fusion. The absence of an embedding provider is represented explicitly, allowing lexical retrieval without synthetic semantic output. Database query behavior is tested separately from semantic relevance; live embedding quality is not measured here.
 
-Tradeoff: optional embeddings allow useful lexical retrieval when credentials are missing. Synthetic vectors can test SQL ordering and isolation, but cannot measure semantic relevance. HNSW/GIN indexes exist; the audit's production-shaped query did not establish index acceleration.
+## Evidence and calculations
 
-## 2. References are not the same as truth
+The [models](../backend/app/models/evidence.py), [validator](../backend/app/evidence/validator.py), and [calculation identity](../backend/app/evidence/calculation_identity.py) show how extracted source locations, quotes, calculations, claims, inferences, and recommendations are linked. Validation checks workspace and source chains, exact quote presence, and canonical calculation hashes. These checks establish reference consistency. They do not establish semantic entailment or recompute arbitrary code from a stored hash.
 
-Read the [evidence models](../backend/app/models/evidence.py), [validator](../backend/app/evidence/validator.py) and [persistence helpers](../backend/app/agent/persistence.py). The model represents source, extracted content, evidence, calculation, claim, inference and recommendation. Coordinates and provider provenance make an assertion inspectable.
+## Durable execution
 
-Tradeoff: relational rows plus JSON support lists are convenient for multiple links, but do not enforce every edge as a foreign key. The audit exposed a nested source-chain bypass and claims remaining VERIFIED after evidence deletion. Reference resolution also does not prove semantic entailment or recompute a calculation.
+[service.py](../backend/app/agent/service.py) registers the production tools and calls the configured provider for planning and synthesis. [runtime.py](../backend/app/agent/runtime.py) persists states, attempts, leases, and events. The [worker](../backend/app/worker.py) claims work from the database. Read the [runtime tests](../backend/tests/test_phase3_runtime.py) and [closure tests](../backend/tests/test_final_audit_closure.py) beside those modules: ordinary completion, retry, stale ownership, and recovery each test different invariants.
 
-## 3. Recovery is a transaction-ordering problem
+## Execution boundary
 
-Read [runtime.py](../backend/app/agent/runtime.py), [service.py](../backend/app/agent/service.py) and the [database probes](../scripts/phase7_database_probes.py). Runtime state, attempts, identities and events are persisted; workers acquire leases and streams replay database events.
+[python_sandbox.py](../backend/app/tools/python_sandbox.py) calls the [runner service](../backend/app/sandbox_runner_server.py). The runner creates a constrained payload container without network access. The API has no Docker socket. The runner host remains a privileged control boundary; local Compose uses the host Docker daemon, while the production profile requires a separately hosted runner.
 
-The useful counterexample: two event writers can commit out of creation order. A cursor based on creation time can skip the late commit even though the row is durable. Another probe let a stale worker overwrite a new owner's final response. Passing normal reconnect or duplicate-identity tests does not establish these invariants.
+## Provider and browser behavior
 
-## 4. Put execution behind a separate boundary
-
-The [Python tool](../backend/app/tools/python_sandbox.py) calls an [authenticated runner](../backend/app/sandbox_runner_server.py). Payloads run in a fixed image with constrained resources and network access disabled. The application backend has no Docker socket.
-
-Tradeoff: the runner controls container execution, so its host is a separate trust boundary. Non-root payloads do not make a root Docker control plane harmless. Local development topology is explicitly different from an independently isolated production runner.
-
-## 5. Treat provider absence as a product state
-
-[Multimodal contracts](../backend/app/llm/multimodal.py), [extraction contracts](../backend/app/ingestion/contracts.py) and [capabilities](../backend/app/ingestion/capabilities.py) distinguish ready, partial, invalid and unavailable results. Native text and OCR remain useful when semantic vision is unavailable. Speech timestamps and speakers originate from the provider rather than invented segment boundaries.
-
-Direct live extraction/persistence/retrieval succeeded in the audit. That does not imply the default investigation worker uses provider planning or synthesis: it currently registers retrieval only.
-
-## 6. Browser types need runtime contracts
-
-Review the [API client](../frontend/src/lib/api-client.ts), [SSE hook](../frontend/src/hooks/useInvestigationStream.ts) and [report renderer](../frontend/src/components/workspace/ExecutiveReportView.tsx). Access tokens remain in memory, refresh credentials use HttpOnly cookies, and SSE uses bearer headers rather than query tokens. Dialogs preserve native focus containment while closing.
-
-The report renderer passed compilation and authored-fixture checks, but real worker output lacked the report fields it expected. This is why the audit includes actual browser flows alongside static and component tests.
-
-## Suggested review route
-
-1. Read the [README capability table](../README.md).
-2. Follow a source through extraction and SQL retrieval.
-3. Inspect the default runtime registry and compare it with the intended report contract.
-4. Read the [seven release blockers](../PHASE_7_FINAL_AUDIT.md#release-blockers).
-5. Compare ordinary tests with the adversarial probes that invalidated broader claims.
-
-The strongest supported portfolio claim is building and critically testing these systems components. A complete production autonomous agent is not yet a supported claim.
+[The provider client](../backend/app/llm/client.py) selects a configured text provider for planning and synthesis. [Multimodal contracts](../backend/app/llm/multimodal.py) distinguish native extraction, OCR, provider results, and unavailable capabilities. The [frontend API client](../frontend/src/lib/api-client.ts) keeps access credentials in memory; [the SSE hook](../frontend/src/hooks/useInvestigationStream.ts) reconnects with an Authorization header and deduplicates events. A completed UI brief is model output with checked references, so the reader still needs to inspect its source passages.

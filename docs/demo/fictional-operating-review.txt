@@ -1,0 +1,7 @@
+FICTIONAL TEST DATA ONLY. This text is authored for a repository reproducibility check.
+
+Operating review for the first quarter of 2026. Revenue was 12.4 million units, compared with 11.2 million units in the previous quarter. Operating costs were 9.1 million units, compared with 8.0 million units previously. These figures are illustrative and do not describe a real organization.
+
+Customer support recorded 1,280 open cases at quarter end, compared with 920 previously. Median first response time was 31 hours, compared with 24 hours previously. The report attributes the increased backlog to an onboarding spike but provides no controlled causal study.
+
+Management notes that retention fell from 91 percent to 87 percent. The report recommends reviewing onboarding capacity and cost growth. No customer-level data, forecast, or external validation is included.

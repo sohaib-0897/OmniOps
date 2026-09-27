@@ -199,3 +199,4 @@ if __name__ == "__main__":
         status_str = "PASSED" if s.passed else "FAILED"
         print(f"[{s.scenario_id}] {s.scenario_name}: {status_str} ({s.latency_ms}ms)")
     print("===============================================================")
+    raise SystemExit(0 if report.passed_scenarios == report.total_scenarios else 1)
