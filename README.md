@@ -6,11 +6,19 @@ The application has a Next.js interface, a FastAPI API, a separate worker, Postg
 
 ## Screenshots
 
-Captured from the running local application on 2026-09-27 at 1440 × 900. The source is an authored fictional PDF; the brief was produced by the configured local Ollama model during this review.
+Captured from one local investigation of an [authored fictional PDF](docs/demo/OmniOps_Test_Business_Performance_Report.pdf) on 2026-09-27 at 1440 × 900. The runtime view shows the writing stage; the other views show its saved result. Citation checks establish source linkage and quote matching, not the truth of the conclusion.
 
-![Completed investigation with findings and passage citations](docs/screenshots/investigation-brief.png)
+**Investigation runtime.** The workspace shows the stage timeline, six retrieved evidence passages, and saved events.
 
-![Extracted PDF passages and source locations in the reader](docs/screenshots/source-passages.png)
+![Investigation writing stage with stage timeline, retrieved passages, and saved events](docs/screenshots/runtime-workspace.png)
+
+**Completed brief.** Findings carry citation markers and passage sidenotes.
+
+![Completed investigation brief with cited findings and source passage sidenotes](docs/screenshots/completed-brief.png)
+
+**Citation inspector.** Selecting a finding opens the full cited passage and its location in the source.
+
+![Selected finding connected to its source passage in the citation inspector](docs/screenshots/citation-inspector.png)
 
 ## Engineering highlights
 
