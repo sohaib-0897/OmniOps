@@ -113,6 +113,12 @@ def test_explicit_http_deployment_requires_http_origin_and_insecure_cookie(monke
     monkeypatch.setattr(settings, "ALLOW_INSECURE_HTTP", True)
     monkeypatch.setattr(settings, "COOKIE_SECURE", False)
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["http://203.0.113.10"])
+    monkeypatch.setattr(settings, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(settings, "SMTP_FROM", "support@example.test")
+    monkeypatch.setattr(settings, "SMTP_USERNAME", "sender")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "configured")
+    monkeypatch.setattr(settings, "SMTP_STARTTLS", True)
+    monkeypatch.setattr(settings, "PASSWORD_RESET_BASE_URL", "http://203.0.113.10")
     settings.validate_production_configuration()
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://example.com"])
     with pytest.raises(ValueError, match="HTTP origins"):

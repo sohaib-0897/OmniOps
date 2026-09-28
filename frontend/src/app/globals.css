@@ -11,82 +11,55 @@
  */
 @layer base {
   :root,
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --canvas-rgb: 246 245 239;
+    --surface-rgb: 253 252 248;
+    --raised-rgb: 235 239 234;
+    --line-rgb: 218 222 214;
+    --line-strong-rgb: 191 202 193;
+    --ink-rgb: 31 43 40;
+    --ink-2-rgb: 75 91 86;
+    --ink-3-rgb: 91 107 101;
+    --ink-inverse-rgb: 253 252 248;
+    --action-hover-rgb: 48 65 60;
+    --provenance-rgb: 25 121 105;
+    --provenance-strong-rgb: 16 100 86;
+    --caution-rgb: 138 91 28;
+    --critical-rgb: 170 67 57;
+    --wash-alpha: 0.1;
+    --track-indexed: rgb(91 107 101 / 0.22);
+    --track-evidence: #607c71;
+    --track-pending: rgb(91 107 101 / 0.4);
+    --scrim: rgb(31 43 40 / 0.35);
+    --elevation-pane: 0 0 0 1px rgb(var(--line-rgb)), 0 12px 32px rgb(31 43 40 / 0.08);
+    --elevation-dialog: 0 24px 64px rgb(31 43 40 / 0.16);
+  }
+
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --canvas-rgb: 17 19 21;
-    --surface-rgb: 24 26 29;
-    --raised-rgb: 31 34 38;
-    --line-rgb: 42 46 51;
-    --line-strong-rgb: 58 63 69;
-    --ink-rgb: 236 238 240;
-    --ink-2-rgb: 169 174 181;
-    --ink-3-rgb: 134 140 148;
-    --ink-inverse-rgb: 17 19 21;
-    --action-hover-rgb: 205 209 214;
-    --provenance-rgb: 92 196 180;
-    --provenance-strong-rgb: 138 216 203;
-    --caution-rgb: 224 178 92;
-    --critical-rgb: 240 122 122;
+    --canvas-rgb: 24 31 29;
+    --surface-rgb: 34 42 39;
+    --raised-rgb: 45 56 52;
+    --line-rgb: 60 73 67;
+    --line-strong-rgb: 83 101 92;
+    --ink-rgb: 241 241 230;
+    --ink-2-rgb: 195 205 194;
+    --ink-3-rgb: 164 179 168;
+    --ink-inverse-rgb: 24 31 29;
+    --action-hover-rgb: 222 230 216;
+    --provenance-rgb: 126 211 187;
+    --provenance-strong-rgb: 163 226 207;
+    --caution-rgb: 229 185 112;
+    --critical-rgb: 238 139 123;
     --wash-alpha: 0.14;
-    --track-indexed: rgb(134 140 148 / 0.3);
-    --track-evidence: #a9aeb5;
-    --track-pending: rgb(134 140 148 / 0.45);
+    --track-indexed: rgb(164 179 168 / 0.3);
+    --track-evidence: #b5c8b7;
+    --track-pending: rgb(164 179 168 / 0.45);
     --scrim: rgb(0 0 0 / 0.55);
     --elevation-pane: 0 0 0 1px rgb(var(--line-rgb)), 0 12px 40px rgb(0 0 0 / 0.35);
     --elevation-dialog: 0 24px 80px rgb(0 0 0 / 0.45);
   }
-
-  :root[data-theme="light"] {
-    color-scheme: light;
-    --canvas-rgb: 246 247 248;
-    --surface-rgb: 255 255 255;
-    --raised-rgb: 238 240 242;
-    --line-rgb: 227 229 232;
-    --line-strong-rgb: 205 209 214;
-    --ink-rgb: 21 23 26;
-    --ink-2-rgb: 74 80 88;
-    --ink-3-rgb: 101 107 115;
-    --ink-inverse-rgb: 255 255 255;
-    --action-hover-rgb: 42 46 51;
-    --provenance-rgb: 14 116 102;
-    --provenance-strong-rgb: 10 90 79;
-    --caution-rgb: 143 93 0;
-    --critical-rgb: 192 57 43;
-    --wash-alpha: 0.1;
-    --track-indexed: rgb(101 107 115 / 0.22);
-    --track-evidence: #4a5058;
-    --track-pending: rgb(101 107 115 / 0.4);
-    --scrim: rgb(21 23 26 / 0.3);
-    --elevation-pane: 0 0 0 1px rgb(var(--line-rgb)), 0 12px 32px rgb(21 23 26 / 0.08);
-    --elevation-dialog: 0 24px 64px rgb(21 23 26 / 0.16);
-  }
-
-  /* Without the pre-paint script (JS disabled) the system preference still applies. */
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme]) {
-      color-scheme: light;
-      --canvas-rgb: 246 247 248;
-      --surface-rgb: 255 255 255;
-      --raised-rgb: 238 240 242;
-      --line-rgb: 227 229 232;
-      --line-strong-rgb: 205 209 214;
-      --ink-rgb: 21 23 26;
-      --ink-2-rgb: 74 80 88;
-      --ink-3-rgb: 101 107 115;
-      --ink-inverse-rgb: 255 255 255;
-      --action-hover-rgb: 42 46 51;
-      --provenance-rgb: 14 116 102;
-      --provenance-strong-rgb: 10 90 79;
-      --caution-rgb: 143 93 0;
-      --critical-rgb: 192 57 43;
-      --wash-alpha: 0.1;
-      --track-indexed: rgb(101 107 115 / 0.22);
-      --track-evidence: #4a5058;
-      --track-pending: rgb(101 107 115 / 0.4);
-      --scrim: rgb(21 23 26 / 0.3);
-    }
-  }
-
   :root {
     --canvas: rgb(var(--canvas-rgb));
     --surface: rgb(var(--surface-rgb));

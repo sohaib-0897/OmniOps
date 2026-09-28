@@ -38,7 +38,7 @@ export function FailureView({
             {snapshot.stageKnown && <> · stopped during {stage.label.toLowerCase()}</>}
           </p>
           <h2 id="failure-title" className="r-title mt-1 text-ink">{copy.title}</h2>
-          <p className="r-body mt-3 max-w-[560px] text-ink-2">{copy.body}</p>
+          <p className="t-body mt-3 max-w-[560px] text-ink-2">{copy.body}</p>
           {stream.errorMessage && !cancelled && stream.errorMessage !== copy.body && (
             <p className="t-meta mt-3 text-ink-3">Runtime message: {stream.errorMessage}</p>
           )}

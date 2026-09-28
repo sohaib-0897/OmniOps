@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
+import "./revamp.css";
 
 const plexSans = localFont({
   src: [
@@ -36,12 +37,7 @@ export const metadata: Metadata = {
   description: "Every answer, traced to the passage it came from.",
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#111315" },
-    { media: "(prefers-color-scheme: light)", color: "#F6F7F8" },
-  ],
-};
+export const viewport: Viewport = { themeColor: "#f6f5ef" };
 
 export default function RootLayout({
   children,
@@ -55,7 +51,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        {/* Resolves System/Light/Dark before first paint so there is no theme flash. */}
+        {/* Start every page load in light mode before first paint. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       </head>
       <body>

@@ -1,38 +1,28 @@
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "omniops-theme";
-
 /**
- * Runs inline in <head> before first paint. It only reads a UI preference;
- * no credentials or application data are stored client-side.
+ * Run in <head> before first paint. Every new page load begins in light mode.
+ * A visitor can still switch to dark mode for the current page session.
  */
-export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var k="${THEME_STORAGE_KEY}",p=localStorage.getItem(k);if(p!=="light"&&p!=="dark")p="system";var m=window.matchMedia("(prefers-color-scheme: light)");var r=p==="system"?(m.matches?"light":"dark"):p;var d=document.documentElement;d.dataset.theme=r;d.dataset.themePreference=p;}catch(e){}})();`;
+export const THEME_BOOTSTRAP_SCRIPT = '(function(){var d=document.documentElement;d.dataset.theme="light";d.dataset.themePreference="light";})();';
 
 export function readThemePreference(): ThemePreference {
-  if (typeof window === "undefined") return "system";
-  try {
-    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : "system";
-  } catch {
-    return "system";
+  if (typeof document === "undefined") return "light";
+  const value = document.documentElement.dataset.themePreference;
+  return value === "dark" || value === "system" ? value : "light";
+}
+
+export function resolveTheme(preference: ThemePreference): ResolvedTheme {
+  if (preference === "system" && typeof window !== "undefined") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
+  return preference === "dark" ? "dark" : "light";
 }
 
-export function resolveTheme(preference: ThemePreference, systemPrefersLight: boolean): ResolvedTheme {
-  if (preference === "system") return systemPrefersLight ? "light" : "dark";
-  return preference;
-}
-
-/** Apply a preference with a short token cross-fade (skipped under reduced motion). */
+/** Apply a theme for this page session, with a short cross-fade when motion is allowed. */
 export function applyThemePreference(preference: ThemePreference) {
   if (typeof window === "undefined") return;
-  try {
-    if (preference === "system") window.localStorage.removeItem(THEME_STORAGE_KEY);
-    else window.localStorage.setItem(THEME_STORAGE_KEY, preference);
-  } catch {
-    /* storage may be unavailable; the choice still applies for this page */
-  }
   const root = document.documentElement;
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!reduced) {
@@ -40,10 +30,10 @@ export function applyThemePreference(preference: ThemePreference) {
     window.setTimeout(() => root.classList.remove("theme-transition"), 220);
   }
   root.dataset.themePreference = preference;
-  root.dataset.theme = resolveTheme(
-    preference,
-    window.matchMedia("(prefers-color-scheme: light)").matches,
-  );
+  const resolved = resolveTheme(preference);
+  root.dataset.theme = resolved;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#181f1d" : "#f6f5ef");
+  window.dispatchEvent(new Event("omniops:theme-change"));
 }
 
-export const THEME_ORDER: ThemePreference[] = ["system", "light", "dark"];
+export const THEME_ORDER: ThemePreference[] = ["light", "dark", "system"];

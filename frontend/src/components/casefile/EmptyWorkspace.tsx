@@ -60,10 +60,10 @@ export function EmptyWorkspace({
   const scope = scopeSummary(files, outlines, tables);
   const starters = suggestions(files);
   return (
-    <div className="mx-auto w-full max-w-[720px] pb-20 pt-[110px] max-lg:pt-10">
-      <p className="t-overline">{workspace.name}</p>
-      <h1 className="r-display mt-5 max-w-[380px] text-ink max-md:text-[28px] max-md:leading-9">
-        What should we find out from these sources?
+    <div className="rev-empty mx-auto w-full max-w-[880px] pb-20 pt-[90px] max-lg:pt-10">
+      <p className="rev-workspace-label">{workspace.name}</p>
+      <h1 className="rev-empty-title mt-5 text-ink">
+        What do you want to investigate?
       </h1>
       <div className="mt-5">
         <Composer
@@ -88,9 +88,9 @@ export function EmptyWorkspace({
         </div>
       )}
 
-      <section className="mt-12" aria-labelledby="scope-heading">
+      <section className="rev-empty-sources mt-12" aria-labelledby="scope-heading">
         <div className="flex items-center justify-between border-b border-line pb-[18px]">
-          <h2 id="scope-heading" className="t-overline">In scope</h2>
+          <h2 id="scope-heading" className="t-label">Your material <span className="rev-material-count">{files.length}</span></h2>
           <button type="button" className="t-meta text-ink-2 hover:text-ink" onClick={onManageSources}>
             Manage sources →
           </button>
@@ -104,7 +104,7 @@ export function EmptyWorkspace({
             )}
           </div>
         ) : (
-          <div className="mt-2.5 flex flex-col gap-0.5">
+          <div className="rev-empty-source-list mt-2.5">
             {files.map((file) => (
               <SourceRow
                 key={file.id}

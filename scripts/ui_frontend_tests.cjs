@@ -374,7 +374,11 @@ test('History groups by calendar day in order', () => {
   const groups = groupByDay([{ id: 'a', objective: 'A', status: 'completed', created_at: now.toISOString() }, { id: 'b', objective: 'B', status: 'failed', created_at: earlier.toISOString() }]);
   assert.equal(groups[0].label, 'Today'); assert.ok(groups.length === 2);
 });
-test('Theme preference resolves System to the operating system setting before paint', () => {
-  assert.equal(resolveTheme('system', true), 'light'); assert.equal(resolveTheme('system', false), 'dark'); assert.equal(resolveTheme('dark', true), 'dark');
-  assert.match(THEME_BOOTSTRAP_SCRIPT, /prefers-color-scheme: light/); assert.match(THEME_BOOTSTRAP_SCRIPT, /dataset\.theme/);
+test('Every page load starts light even after a previous dark choice or dark system preference', () => {
+    assert.equal(resolveTheme('light'), 'light'); assert.equal(resolveTheme('dark'), 'dark');
+    assert.equal(resolveTheme('system'), 'light');
+  const document = { documentElement: { dataset: {} } };
+  vm.runInNewContext(THEME_BOOTSTRAP_SCRIPT, { document, localStorage: { getItem: () => 'dark' }, window: { matchMedia: () => ({ matches: false }) } });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(document.documentElement.dataset.themePreference, 'light');
 });

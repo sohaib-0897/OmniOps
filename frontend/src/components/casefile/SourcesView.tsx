@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, Trash2 } from "lucide-react";
+import { AudioLines, Eye, FileImage, FileSpreadsheet, FileText, Trash2 } from "lucide-react";
 import type { PassageMap, SourceDocument, TabularDataset, Workspace } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
 import { formatBytes, formatDate } from "@/lib/utils";
@@ -50,9 +50,9 @@ export function SourcesView({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[800px] pb-20">
+    <div className="rev-sources mx-auto w-full max-w-[1050px] pb-20">
       <p className="t-meta text-ink-3">{workspace.name} / Sources</p>
-      <h1 className="r-title mt-3 text-ink">Sources</h1>
+      <h1 className="rev-sources-title mt-3 text-ink">A collection of material.</h1>
       <p className="t-body mt-1 text-ink-2">
         {files.length} {files.length === 1 ? "source" : "sources"} · {passages.toLocaleString("en-US")} indexed {passages === 1 ? "passage" : "passages"} · {tables.length} {tables.length === 1 ? "table" : "tables"}
       </p>
@@ -63,12 +63,14 @@ export function SourcesView({
         </div>
       )}
 
-      <ul className="mt-8 flex flex-col divide-y divide-line border-y border-line">
+      <ul className="rev-source-grid mt-8">
         {files.length === 0 && <li className="t-body py-6 text-ink-2">No sources yet. Upload a document, spreadsheet, image or audio file.</li>}
         {files.map((file) => {
           const fileTables = tables.filter((table) => table.source_id === file.id);
           return (
-            <li key={file.id} className="py-4">
+            <li key={file.id} className="rev-source-card">
+              <div className="rev-source-cover" data-modality={file.modality} aria-hidden="true"><span>{file.modality === "spreadsheet" ? <FileSpreadsheet/> : file.modality === "audio" ? <AudioLines/> : file.modality === "image" ? <FileImage/> : <FileText/>}</span><i/><i/><i/><i/></div>
+              <div className="rev-source-info">
               <SourceRow file={file} map={outlines[file.id]} tables={fileTables} ticks height={8} indexedFull showIcon onSelectPassage={() => onPreviewFile(file)} />
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span className="t-meta text-ink-3">{formatBytes(file.byte_size, 1)} · added {formatDate(file.created_at)}</span>
@@ -90,6 +92,7 @@ export function SourcesView({
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
                   </button>
                 )}
+              </div>
               </div>
             </li>
           );

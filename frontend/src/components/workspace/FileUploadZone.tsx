@@ -89,10 +89,10 @@ export function FileUploadZone({ workspaceId, onUploadComplete, compact = false 
     if (input.current) input.current.value = "";
   };
   return (
-    <section className="space-y-3">
+    <section className="rev-upload space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="section-title">Upload sources</h2>
-        <span className="text-[11px] text-zinc-400">50 MB / file</span>
+        <span className="t-meta text-ink-3">50 MB / file</span>
       </div>
       <input
         ref={input}
@@ -116,22 +116,23 @@ export function FileUploadZone({ workspaceId, onUploadComplete, compact = false 
           setDragging(false);
           void upload(event.dataTransfer.files);
         }}
-        className={`flex w-full items-center gap-3 rounded-md border border-dashed text-left transition-colors ${compact ? "px-3 py-2.5" : "p-4"} ${dragging ? "border-zinc-200 bg-zinc-800" : "border-zinc-700 hover:border-zinc-400"}`}
+        className={`rev-upload-drop flex w-full items-center gap-3 text-left ${compact ? "px-3 py-2.5" : "p-4"}`}
+        data-dragging={dragging || undefined}
       >
-        <FileUp className="h-5 w-5 shrink-0 text-zinc-300" />
+        <FileUp className="h-5 w-5 shrink-0 text-provenance" />
         <span>
           <span className="block text-xs font-medium">
             {busy ? "Uploading sources" : "Drop files or browse"}
           </span>
-          {!compact && <span className="mt-1 block text-[11px] leading-5 text-zinc-400">
+          {!compact && <span className="mt-1 block text-[11px] leading-5 text-ink-3">
             Documents, tables, images, and audio
           </span>}
         </span>
       </button>
       {queue.length > 0 && (
-        <div className="rounded-md border border-zinc-800">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-            <span className="text-xs text-zinc-300">
+        <div className="rounded-md border border-line bg-surface">
+          <div className="flex items-center justify-between border-b border-line px-3 py-2">
+            <span className="text-xs text-ink-2">
               Upload queue · {queue.length}
             </span>
             {!busy && (
@@ -146,7 +147,7 @@ export function FileUploadZone({ workspaceId, onUploadComplete, compact = false 
           </div>
           <div
             aria-live="polite"
-            className="max-h-64 divide-y divide-zinc-800 overflow-y-auto"
+            className="max-h-64 divide-y divide-line overflow-y-auto"
           >
             {queue.map((item, index) => {
               const Icon =
@@ -161,17 +162,17 @@ export function FileUploadZone({ workspaceId, onUploadComplete, compact = false 
                 <div key={`${item.name}-${index}`} className="px-3 py-2.5">
                   <div className="flex items-start gap-2">
                     <Icon
-                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.status === "uploading" ? "animate-spin" : ""} ${item.status === "failed" ? "text-red-300" : "text-zinc-400"}`}
+                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.status === "uploading" ? "animate-spin" : ""} ${item.status === "failed" ? "text-critical" : "text-provenance"}`}
                     />
-                    <span className="min-w-0 flex-1 break-words text-xs text-zinc-200">
+                    <span className="min-w-0 flex-1 break-words text-xs text-ink">
                       {item.name}
                     </span>
                   </div>
-                  <p className="mt-1 pl-5 text-[11px] capitalize text-zinc-400">
+                  <p className="mt-1 pl-5 text-[11px] capitalize text-ink-3">
                     {item.status} · {formatBytes(item.size, 1)}
                   </p>
                   {item.error && (
-                    <p className="mt-1 break-words pl-5 text-xs leading-5 text-red-200">
+                    <p className="mt-1 break-words pl-5 text-xs leading-5 text-critical">
                       {item.error}
                     </p>
                   )}

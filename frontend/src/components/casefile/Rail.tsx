@@ -99,7 +99,7 @@ function WorkspaceSwitcher({ workspace, readyLabel }: { workspace: Workspace; re
           ))}
           {!workspaces && <p className="t-meta px-2.5 py-2 text-ink-3">Loading workspaces…</p>}
           <div className="my-1 border-t border-line" />
-          <Link role="menuitem" href="/" className="rail-item" onClick={() => setOpen(false)}>
+          <Link role="menuitem" href="/app" className="rail-item" onClick={() => setOpen(false)}>
             <span className="rail-item-label">All casefiles</span>
           </Link>
         </div>
@@ -118,7 +118,7 @@ function AccountRow({ collapsed }: { collapsed?: boolean }) {
       await apiClient.logout();
     } finally {
       // Drop all protected component and SWR state before another sign-in.
-      window.location.replace("/");
+      window.location.replace("/login");
     }
   };
   return (
@@ -199,11 +199,11 @@ export function Rail(props: RailProps) {
         onKeyDown={(event) => drawerOpen && event.key === "Escape" && props.onCloseDrawer()}
       >
         <div className="flex w-full items-center gap-2.5 py-1 pl-2">
-          <Link href="/" className="rail-hide-collapsed rounded-control" aria-label="OmniOps home">
+          <Link href="/app" className="rail-hide-collapsed rounded-control" aria-label="OmniOps casefiles">
             <BrandLockup />
           </Link>
           {collapsed && (
-            <Link href="/" className="rounded-control" aria-label="OmniOps home">
+            <Link href="/app" className="rounded-control" aria-label="OmniOps casefiles">
               <BrandMark />
             </Link>
           )}

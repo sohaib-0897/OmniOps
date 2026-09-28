@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { motionTokens } from "@/motion/tokens";
 import type { PassageMap, SourceDocument, TabularDataset } from "@/types/api";
 import type { InvestigationStreamState } from "@/hooks/useInvestigationStream";
 import type { CalculationRef, PassageRef } from "@/lib/brief-model";
@@ -65,10 +67,11 @@ export function StageBar({
   const progress = Math.min(doneThrough, INVESTIGATION_STAGES.length - 1) / (INVESTIGATION_STAGES.length - 1);
   const last = INVESTIGATION_STAGES.length - 1;
   const detailIndex = Math.min(snapshot.index, last);
+  const reduced = useReducedMotion();
   return (
     <div>
       <div className="stage-bar">
-        <span className="stage-progress" data-failed={failed || undefined} style={{ width: `calc((100% - 16px) * ${progress})` }} aria-hidden="true" />
+        <motion.span className="stage-progress" data-failed={failed || undefined} initial={false} animate={{ width: `calc((100% - 16px) * ${progress})` }} transition={{ duration: reduced ? 0 : motionTokens.panel, ease: motionTokens.ease }} aria-hidden="true" />
         <ol className="stage-list" aria-label="Investigation stages">
         {INVESTIGATION_STAGES.map((stage, index) => {
           const state = unknown
@@ -130,6 +133,7 @@ export function InvestigationField({
   folding,
 }: FieldProps) {
   const snapshot = deriveInvestigationStage(stream);
+  const reduced = useReducedMotion();
   const running = !snapshot.terminal;
   const [showAll, setShowAll] = useState(false);
   const batch = snapshot.batchReceived;
@@ -222,10 +226,14 @@ export function InvestigationField({
                   const active = selection?.kind === "passage" && selection.chunkId === passage.chunkId;
                   return (
                     <li key={passage.chunkId}>
-                      <button
+                      <motion.button
                         type="button"
-                        className="evidence-card evidence-card-arrive"
-                        style={{ animationDelay: `${Math.min(index * 40, 400)}ms` }}
+                        className="evidence-card"
+                        initial={reduced ? false : { opacity: 0, y: -8, scale: 0.985 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ duration: reduced ? 0 : motionTokens.panel, delay: reduced ? 0 : Math.min(index * motionTokens.stagger, 0.33), ease: motionTokens.ease }}
+                        whileHover={reduced ? undefined : { y: -2 }}
+                        whileTap={reduced ? undefined : { scale: 0.995 }}
                         data-active={active || undefined}
                         aria-label={`${passage.sourceName}, ${passageLocatorLabel(passage, map)}. Retrieved as evidence. Open passage.`}
                         onClick={() => onSelect({ kind: "passage", chunkId: passage.chunkId })}
@@ -235,7 +243,7 @@ export function InvestigationField({
                           <span className="t-meta text-ink-2">Evidence</span>
                         </span>
                         <span className="quote">{excerpt(passage.content, 110, headers)}</span>
-                      </button>
+                      </motion.button>
                     </li>
                   );
                 })}

@@ -33,19 +33,24 @@ export function BrandLockup({ size = 24 }: { size?: number }) {
   );
 }
 
-const icons = { system: Monitor, light: Sun, dark: Moon } as const;
-const labels = { system: "System", light: "Light", dark: "Dark" } as const;
+const icons = { light: Sun, dark: Moon, system: Monitor } as const;
+const labels = { light: "Light", dark: "Dark", system: "System" } as const;
 
 export function useThemePreference() {
-  const [preference, setPreference] = useState<ThemePreference>("system");
+  const [preference, setPreference] = useState<ThemePreference>("light");
   useEffect(() => {
-    setPreference(readThemePreference());
-    const media = window.matchMedia("(prefers-color-scheme: light)");
-    const follow = () => {
+    const sync = () => setPreference(readThemePreference());
+    sync();
+    window.addEventListener("omniops:theme-change", sync);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncSystem = () => {
       if (readThemePreference() === "system") applyThemePreference("system");
     };
-    media.addEventListener("change", follow);
-    return () => media.removeEventListener("change", follow);
+    media.addEventListener("change", syncSystem);
+    return () => {
+      window.removeEventListener("omniops:theme-change", sync);
+      media.removeEventListener("change", syncSystem);
+    };
   }, []);
   const choose = (value: ThemePreference) => {
     setPreference(value);
@@ -54,7 +59,7 @@ export function useThemePreference() {
   return { preference, choose };
 }
 
-/** Cycles System → Light → Dark. The label always states the current choice. */
+/** Cycles light, dark, and system for the current page session. New loads start light. */
 export function ThemeToggle({ withLabel = false }: { withLabel?: boolean }) {
   const { preference, choose } = useThemePreference();
   const next = THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length];

@@ -38,6 +38,10 @@ frontend/playwright-report/
 
 # Laboratory and Temporary Verification Artifacts
 .tmp_test/
+# External design research and local handoff notes are not product assets.
+refs/
+handout.md
+FRONTEND_MOTION_UPGRADE.md
 tmp*/
 .test-temp*/
 .tmp*/

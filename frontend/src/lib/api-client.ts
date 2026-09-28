@@ -96,6 +96,8 @@ class ApiClient {
       "/auth/login",
       "/auth/register",
       "/auth/logout",
+      "/auth/password-reset/request",
+      "/auth/password-reset/confirm",
     ].includes(endpoint);
     if (response.status === 401 && refreshable && (await this.refresh())) {
       headers["Authorization"] = `Bearer ${this.getToken()}`;
@@ -120,7 +122,10 @@ class ApiClient {
         typeof window !== "undefined"
       ) {
         this.clearToken();
-        window.location.assign("/?session=expired");
+        const next = window.location.pathname.startsWith("/workspaces/")
+          ? `&next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+          : "";
+        window.location.assign(`/app?session=expired${next}`);
       }
       const errorMsg =
         data?.error?.message ||

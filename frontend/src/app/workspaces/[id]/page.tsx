@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motionTokens } from "@/motion/tokens";
 import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import { useInvestigationStream } from "@/hooks/useInvestigationStream";
 import { useInvestigationHistory, useLineage, useOutlines } from "@/hooks/useCasefileData";
@@ -41,6 +43,7 @@ function readLocation(): { view: WorkspaceView; investigation: string | null } {
 }
 
 function WorkspaceScreen({ workspaceId }: { workspaceId: string }) {
+  const reduced = useReducedMotion();
   const { workspace, files, tables, isLoading, isError, mutateAll } = useWorkspaceData(workspaceId);
   const { outlines } = useOutlines(workspaceId, files);
   const { history, isLoading: historyLoading, mutate: mutateHistory } = useInvestigationHistory(workspaceId);
@@ -352,7 +355,11 @@ function WorkspaceScreen({ workspaceId }: { workspaceId: string }) {
             <ErrorState title="Some workspace data is unavailable" message="Source counts may be incomplete. Retry to reload the workspace." onRetry={mutateAll} />
           </div>
         )}
-        {content}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div key={`${location.view}:${activeId ?? ""}`} initial={reduced ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }} transition={{ duration: reduced ? 0.08 : motionTokens.quick, ease: motionTokens.ease }}>
+            {content}
+          </motion.div>
+        </AnimatePresence>
       </main>
       {inspectorOpen && selection && (
         <>

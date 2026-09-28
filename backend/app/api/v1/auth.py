@@ -1,18 +1,64 @@
-import hashlib, hmac
+import hashlib, hmac, secrets, uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from urllib.parse import quote
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import client_ip, enforce_rate_limit
+from app.core.password_reset_mail import deliver_password_reset
 from app.core.security import create_access_token, encode_refresh_token, get_password_hash, hash_refresh_secret, new_refresh_secret, parse_refresh_token, verify_password
-from app.models.user import RefreshToken, User, UserSession, Workspace, WorkspaceMembership, WorkspaceRole
-from app.schemas.auth import AuthSessionResponse, TokenResponse, UserLoginRequest, UserRegisterRequest, UserResponse
+from app.models.user import PasswordResetToken, RefreshToken, User, UserSession, Workspace, WorkspaceMembership, WorkspaceRole
+from app.schemas.auth import AuthSessionResponse, PasswordResetConfirm, PasswordResetRequest, TokenResponse, UserLoginRequest, UserRegisterRequest, UserResponse
 from app.schemas.common import ResponseEnvelope
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.post("/password-reset/request", response_model=ResponseEnvelope[dict])
+async def request_password_reset(req: PasswordResetRequest, request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    email = req.email.lower().strip()
+    await enforce_rate_limit(db, key=f"reset:ip:{client_ip(request)}", limit=settings.RATE_LIMIT_PASSWORD_RESET_PER_HOUR, window_seconds=3600)
+    await enforce_rate_limit(db, key=f"reset:account:{hashlib.sha256(email.encode()).hexdigest()}", limit=settings.RATE_LIMIT_PASSWORD_RESET_PER_HOUR, window_seconds=3600)
+    user = (await db.execute(select(User).where(User.email == email, User.is_active.is_(True)))).scalar_one_or_none()
+    if user:
+        now = datetime.now(timezone.utc)
+        await db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.consumed_at.is_(None)).values(consumed_at=now))
+        secret = secrets.token_urlsafe(48)
+        token = PasswordResetToken(user_id=user.id, token_hash=hashlib.sha256(secret.encode("ascii")).hexdigest(), expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES))
+        db.add(token)
+        await db.flush()
+        reset_url = f"{settings.PASSWORD_RESET_BASE_URL.rstrip('/')}/reset-password#token={quote(str(token.id) + '.' + secret)}"
+        background_tasks.add_task(deliver_password_reset, email, reset_url)
+    await db.commit()
+    return ResponseEnvelope.ok({"message": "If that account exists, a password reset link is on its way."})
+
+
+@router.post("/password-reset/confirm", response_model=ResponseEnvelope[dict])
+async def confirm_password_reset(req: PasswordResetConfirm, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    await enforce_rate_limit(db, key=f"reset:confirm:ip:{client_ip(request)}", limit=settings.RATE_LIMIT_PASSWORD_RESET_PER_HOUR * 3, window_seconds=3600)
+    try:
+        token_id_text, secret = req.token.split(".", 1)
+        token_id = uuid.UUID(token_id_text)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Reset link is invalid or expired.")
+    token = (await db.execute(select(PasswordResetToken).where(PasswordResetToken.id == token_id).with_for_update())).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    expiry = token.expires_at if token and token.expires_at.tzinfo else token.expires_at.replace(tzinfo=timezone.utc) if token else now
+    if not token or not hmac.compare_digest(token.token_hash, hashlib.sha256(secret.encode("utf-8")).hexdigest()) or token.consumed_at or expiry <= now:
+        raise HTTPException(status_code=400, detail="Reset link is invalid or expired.")
+    user = (await db.execute(select(User).where(User.id == token.user_id).with_for_update())).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="Reset link is invalid or expired.")
+    user.hashed_password = get_password_hash(req.password)
+    await db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.consumed_at.is_(None)).values(consumed_at=now))
+    await db.execute(update(UserSession).where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None)).values(revoked_at=now))
+    await db.execute(update(RefreshToken).where(RefreshToken.session_id.in_(select(UserSession.id).where(UserSession.user_id == user.id)), RefreshToken.revoked_at.is_(None)).values(revoked_at=now))
+    await db.commit()
+    _clear_cookie(response)
+    return ResponseEnvelope.ok({"message": "Password updated. Sign in with your new password."})
 
 def _set_cookie(response: Response, value: str) -> None:
     response.set_cookie(settings.REFRESH_COOKIE_NAME, value, max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400, httponly=True,

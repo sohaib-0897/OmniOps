@@ -9,6 +9,13 @@ services:
       COOKIE_SECURE: "true"
       COOKIE_SAMESITE: lax
       CORS_ORIGINS: ${CORS_ORIGINS:?set JSON origin list}
+      PASSWORD_RESET_BASE_URL: ${PASSWORD_RESET_BASE_URL:?set HTTPS application URL for reset links}
+      SMTP_HOST: ${SMTP_HOST:?set SMTP host}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:?set SMTP username}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?set SMTP password}
+      SMTP_FROM: ${SMTP_FROM:?set SMTP sender}
+      SMTP_STARTTLS: "true"
       SANDBOX_EXECUTION_MODE: remote
       SANDBOX_RUNNER_URL: ${SANDBOX_RUNNER_URL:?set external runner URL}
       SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set runner token}

@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     REFRESH_COOKIE_NAME: str = "omniops_refresh"
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+    PASSWORD_RESET_BASE_URL: str = "http://localhost:3000"
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM: Optional[str] = None
+    SMTP_STARTTLS: bool = True
     # Explicit exception for an initial single-VM deployment by public IPv4.
     ALLOW_INSECURE_HTTP: bool = False
     
@@ -95,6 +103,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN_PER_5_MINUTES: int = 10
     RATE_LIMIT_REGISTER_PER_HOUR: int = 5
     RATE_LIMIT_REFRESH_PER_5_MINUTES: int = 30
+    RATE_LIMIT_PASSWORD_RESET_PER_HOUR: int = 5
     RATE_LIMIT_UPLOAD_PER_HOUR: int = 30
     RATE_LIMIT_INVESTIGATION_PER_HOUR: int = 20
 
@@ -189,6 +198,10 @@ class Settings(BaseSettings):
                 raise ValueError("Production refresh cookies require COOKIE_SECURE=true.")
         if self.COOKIE_SAMESITE.lower() not in {"strict", "lax"}:
             raise ValueError("Production COOKIE_SAMESITE must be strict or lax.")
+        if not all([self.SMTP_HOST, self.SMTP_FROM, self.SMTP_USERNAME, self.SMTP_PASSWORD, self.SMTP_STARTTLS]):
+            raise ValueError("Production password reset requires authenticated STARTTLS SMTP delivery.")
+        if not self.PASSWORD_RESET_BASE_URL.startswith("http://" if self.ALLOW_INSECURE_HTTP else "https://"):
+            raise ValueError("PASSWORD_RESET_BASE_URL must match the deployment transport.")
         if self.SANDBOX_EXECUTION_MODE != "remote" or not self.SANDBOX_RUNNER_URL or not self.SANDBOX_RUNNER_TOKEN:
             raise ValueError("Production requires the authenticated remote sandbox runner.")
 

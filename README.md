@@ -1,42 +1,37 @@
 # OmniOps
 
-OmniOps is a source grounded investigation workspace for business documents. It ingests files, retrieves relevant passages, runs a persisted investigation, and presents a brief with links back to the source. The engineering focus is on inspectable evidence, recovery after worker interruption, and explicit failure when a provider or source is unavailable.
+OmniOps is a workspace for investigating business material. Bring documents, spreadsheets, images, and audio; ask a question; then follow each cited finding through its evidence and passage to the source. Investigations and their events are saved, so work can resume after a connection or worker interruption.
 
-The application has a Next.js interface, a FastAPI API, a separate worker, PostgreSQL with pgvector, and an authenticated container runner for Python calculations. Planning and synthesis use a configured text model; they are not deterministic accuracy guarantees.
+The application uses Next.js, FastAPI, a separate worker, PostgreSQL with pgvector, and an authenticated container runner for Python calculations. Planning and synthesis use a configured text model; they are not deterministic accuracy guarantees.
 
-## Screenshots
+## Product screenshots
 
-Captured from one local investigation of an [authored fictional PDF](docs/demo/OmniOps_Test_Business_Performance_Report.pdf) on 2026-09-27 at 1440 × 900. The runtime view shows the writing stage; the other views show its saved result. Citation checks establish source linkage and quote matching, not the truth of the conclusion.
+The public story uses labelled, illustrative source sheets and passages. Authenticated views show saved application data.
 
-**Investigation runtime.** The workspace shows the stage timeline, six retrieved evidence passages, and saved events.
+![OmniOps landing page with a source-sheet exhibit](docs/screenshots/landing-hero.png)
 
-![Investigation writing stage with stage timeline, retrieved passages, and saved events](docs/screenshots/runtime-workspace.png)
-
-**Completed brief.** Findings carry citation markers and passage sidenotes.
-
-![Completed investigation brief with cited findings and source passage sidenotes](docs/screenshots/completed-brief.png)
-
-**Citation inspector.** Selecting a finding opens the full cited passage and its location in the source.
-
-![Selected finding connected to its source passage in the citation inspector](docs/screenshots/citation-inspector.png)
-
-## Engineering highlights
-
-| Problem | Implementation |
+| Investigation | Completed brief |
 | --- | --- |
-| Recover work after a worker interruption | Investigation state, attempts, leases, and events are stored in PostgreSQL. Lease fencing prevents a stale worker from finalizing another worker's run. |
-| Retrieve within a workspace | SQL filters candidates by workspace before combining PostgreSQL full text and optional pgvector results with reciprocal rank fusion. Lexical search remains available when embeddings are unavailable. |
-| Make conclusions inspectable | Evidence records retain quotes and source locations. Claim validation resolves cited evidence through its chunk, source, investigation, and workspace; calculation records carry a canonical reproducibility hash. |
-| Execute calculations outside the API process | The worker calls an authenticated runner. Its disposable payload container has no network access and has resource limits; the API container has no Docker socket. |
-| Reconnect to a running investigation | Database events support SSE replay by cursor. The frontend uses bearer headers for the stream and deduplicates replayed events. |
+| ![A live investigation showing its saved runtime state](docs/screenshots/investigation-running.png) | ![A completed analytical brief with citations](docs/screenshots/analysis-complete.png) |
 
-The [engineering walkthrough](docs/ENGINEERING.md) links these paths to the relevant code and explains their tradeoffs.
+![Citation inspector connecting a finding to its passage and source](docs/screenshots/evidence-inspector.png)
+
+Home, Sources, sign in, and mobile views are in [the screenshot directory](docs/screenshots/).
+
+## Key capabilities
+
+- Ingest PDF, DOCX, spreadsheet, image, and audio sources. Extraction status and provider failures are explicit.
+- Search workspace passages with PostgreSQL full text and optional pgvector retrieval. Source locations and table context remain inspectable where available.
+- Run durable investigations with saved stage events, reconnectable SSE, cancellation, and failure states driven by actual backend activity.
+- Inspect claims, citations, passages, source tracks, and calculation provenance in an analytical brief. Verification checks citation integrity and quoted text, not the truth of an interpretation.
+- Use a coherent interface across the public story, authentication, Home, Sources, and workspaces. Fresh loads start light; Dark and System are selectable for the current page.
+- Register, sign in, recover a password through a one-time expiring link, and manage a revocable session.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    UI[Next.js workspace] -->|REST and SSE| API[FastAPI]
+    UI[Next.js] -->|REST and SSE| API[FastAPI]
     API --> DB[(PostgreSQL + pgvector)]
     API --> Files[(Source storage)]
     Worker[Investigation worker] --> DB
@@ -46,28 +41,13 @@ flowchart LR
     Runner --> Payload[Isolated payload container]
 ```
 
-The API accepts an upload and stores a source record. Ingestion extracts text and source locations; supported media can use OCR or configured multimodal providers. The worker claims an investigation, asks the text provider for a plan, dispatches registered retrieval or calculation tools, records observations and evidence, then validates and persists the brief. The browser reads saved state and events, including after reconnecting. [Runtime](backend/app/agent/service.py), [retrieval](backend/app/rag/hybrid_search.py), and [evidence validation](backend/app/evidence/validator.py) are the primary implementation entry points.
+The API stores uploaded sources. Ingestion extracts text and source locations; supported media can use OCR or configured multimodal providers. The worker claims an investigation, asks the text provider for a plan, dispatches registered retrieval or calculation tools, records observations and evidence, then validates and saves the brief. The browser reads saved state and events, including after reconnecting. See the [engineering walkthrough](docs/ENGINEERING.md) for code paths and tradeoffs.
 
-## Verified results
+## Local development
 
-These checks were run on 2026-09-27 from an isolated checkout containing the changes in this review:
+The supported local stack is [the Ubuntu Compose profile](docker-compose.ubuntu.yml): PostgreSQL, migration job, API, worker, frontend, local sandbox runner, and Caddy on port 80. Docker Compose and a reachable text provider are required for an investigation. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`.
 
-| Check | Result | Scope |
-| --- | --- | --- |
-| `python -m pytest tests -q --disable-warnings` | 245 passed, 0 skipped | Run in `backend/` against a fresh, migrated pgvector test database with `POSTGRES_TEST_DATABASE_URL` set. |
-| `node --test scripts/ui_frontend_tests.cjs` | 41 passed | Frontend component and behavior checks. |
-| `python -m evals.runner` | 15/15 scenarios passed | Authored deterministic scenarios; factual precision, citation precision, and hallucination rate remain `NOT_MEASURED`. |
-| `npx tsc --noEmit`, `npm run lint`, `npm run build` | Passed | Run in `frontend/`; Next.js 15.5.25 build completed. |
-| Local application | Ready and HTTP 200 | Fresh isolated Compose stack: database, pgvector, migration, runner, and Ollama readiness checks reported ready. |
-| Sample investigation | Completed | A fresh authored text source became ready; the worker saved a brief with five claims. The screenshots above show a separate completed PDF run with nine cited claims. |
-
-The [Phase 7 evidence index](phase7-evidence/README.md) and [final audit](FINAL_AUDIT.md) retain earlier PostgreSQL, migration, security, and failure injection results. Those records describe their own test environments and should not be read as results of the current run.
-
-## Running locally
-
-The supported full stack is [the Ubuntu Compose profile](docker-compose.ubuntu.yml): PostgreSQL, migration job, API, worker, frontend, local sandbox runner, and Caddy on port 80. Docker with Compose and a reachable text provider are required for an investigation. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`.
-
-1. Copy [`.env.example`](.env.example) to `.env`. Set distinct random values for `POSTGRES_PASSWORD`, `SECRET_KEY`, and `SANDBOX_RUNNER_TOKEN`; set `DATABASE_URL` with the same database password. For local HTTP, set `CORS_ORIGINS=["http://localhost"]`, `ALLOW_INSECURE_HTTP=true`, and `COOKIE_SECURE=false`. Keep `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL=http://host.docker.internal:11434` for the local model.
+1. Copy [`.env.example`](.env.example) to `.env`. Set distinct random values for `POSTGRES_PASSWORD`, `SECRET_KEY`, and `SANDBOX_RUNNER_TOKEN`; set `DATABASE_URL` with the same database password. For local HTTP set `ENVIRONMENT=development`, `CORS_ORIGINS=["http://localhost"]`, `ALLOW_INSECURE_HTTP=true`, `COOKIE_SECURE=false`, and `PASSWORD_RESET_BASE_URL=http://localhost`. Keep `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL=http://host.docker.internal:11434` for a local model.
 2. Run:
 
    ```bash
@@ -77,29 +57,29 @@ The supported full stack is [the Ubuntu Compose profile](docker-compose.ubuntu.y
    docker compose --env-file .env -f docker-compose.ubuntu.yml up --no-build -d
    ```
 
-3. Open `http://localhost`. Check `http://localhost/api/v1/readiness` before starting an investigation. Upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
+3. Open `http://localhost`. Check `http://localhost/api/v1/readiness`, upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
 
-The runner in this local profile controls the Docker daemon. [Deployment notes](DEPLOY_UBUNTU.md) explain the profile and its network boundary. The production profile expects a separately hosted runner.
+Without SMTP, local password reset writes a private message under the backend's configured `STORAGE_DIR/dev-password-reset-outbox/`. Read the link there; reset tokens never appear in the product UI or logs. Production requires authenticated STARTTLS SMTP and an HTTPS `PASSWORD_RESET_BASE_URL`; the [production Compose profile](docker-compose.prod.yml) requires these settings. Apply the migration head before starting the updated API. The local runner controls the host Docker daemon; [deployment notes](DEPLOY_UBUNTU.md) explain the network boundary and production runner requirements.
 
-## Testing and repository map
+## Verification
 
-Run the commands in **Verified results** from the repository root, except backend tests, which run in `backend/`, and the three frontend commands, which run in `frontend/`. PostgreSQL integration tests need a dedicated migrated pgvector test database and `POSTGRES_TEST_DATABASE_URL`; see [.github/workflows/ci.yml](.github/workflows/ci.yml) and the [fresh-checkout audit](docs/REPRODUCIBILITY_AUDIT.md) for that setup.
+Run `node scripts/ui_frontend_tests.cjs` from the repository root. From `frontend/`, run `npx tsc --noEmit`, `npm run lint`, and `npm run build`. Backend regression tests run with `python -m pytest backend/tests -q --disable-warnings`; PostgreSQL integration cases need a dedicated migrated pgvector database and `POSTGRES_TEST_DATABASE_URL`. See [CI](.github/workflows/ci.yml), the [reproducibility audit](docs/REPRODUCIBILITY_AUDIT.md), and [frontend revamp verification](FRONTEND_REVAMP.md) for scope and actual results. Deterministic authored scenarios run with `python -m evals.runner`; factual precision, citation precision, and hallucination rate remain `NOT_MEASURED`.
 
 | Path | Purpose |
 | --- | --- |
-| `backend/app/` | API, ingestion, retrieval, evidence validation, worker, and provider adapters |
+| `backend/app/` | API, ingestion, retrieval, evidence validation, worker, and providers |
 | `backend/alembic/` | Database migrations |
-| `frontend/src/` | Workspace interface and API/SSE client |
+| `frontend/src/` | Public story, authentication, workspace, and API/SSE client |
 | `docker/`, `docker-compose*.yml` | Images and deployment profiles |
 | `backend/tests/`, `evals/`, `scripts/` | Regression tests, authored scenarios, and operational probes |
 
 ## Limitations
 
-- Citation validation checks reference integrity and quoted text; it does not prove that a model's interpretation is true. No independent real world accuracy or hallucination rate is measured.
-- Semantic retrieval quality has not been evaluated with a compatible live embedding credential. Lexical PostgreSQL retrieval can operate without embeddings.
+- Citation validation checks reference integrity and quoted text; it does not prove that a model's interpretation is true. No independent real-world accuracy or hallucination rate is measured.
+- Semantic retrieval quality has not been evaluated with a compatible live embedding credential. Lexical PostgreSQL retrieval remains available without embeddings.
 - Vision and audio paths require configured external providers; a readiness capability label does not establish their accuracy.
-- The local runner shares the host Docker control plane. Dedicated runner hosting and external TLS ingress are deployment work, and GitHub hosted CI was not independently verified during this review.
-- Python dependencies use lower bounds rather than a lockfile. The fresh install in this review passed, but a future resolver run can select newer versions and should be checked again.
+- The local runner shares the host Docker control plane. Dedicated runner hosting and external TLS ingress remain deployment work.
+- Python dependencies use lower bounds rather than a lockfile; future resolver runs should be checked.
 
 ## License
 

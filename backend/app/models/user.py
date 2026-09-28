@@ -58,6 +58,14 @@ class RefreshToken(Base, BaseMixin):
     replaced_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), nullable=True)
     session: Mapped["UserSession"] = relationship("UserSession", back_populates="refresh_tokens")
 
+
+class PasswordResetToken(Base, BaseMixin):
+    __tablename__ = "password_reset_tokens"
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 class RateLimitBucket(Base):
     __tablename__ = "rate_limit_buckets"
     key: Mapped[str] = mapped_column(String(255), primary_key=True)

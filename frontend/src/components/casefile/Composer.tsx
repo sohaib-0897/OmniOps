@@ -11,6 +11,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import { ArrowUp, FileText, Loader2, Paperclip, X } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { motionTokens } from "@/motion/tokens";
 import { apiClient } from "@/lib/api-client";
 import { formatBytes } from "@/lib/utils";
 
@@ -53,6 +55,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const busy = working || submitting;
+  const reduced = useReducedMotion();
 
   useImperativeHandle(handle, () => ({
     setObjective: (value: string) => {
@@ -143,7 +146,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-line px-4 py-3" aria-label="Attached files">
             {attachments.map((attachment) => (
-              <span key={attachment.id} className={`attachment-chip ${attachment.status === "failed" ? "attachment-chip-error" : ""}`} title={attachment.error || attachment.file.name}>
+              <motion.span key={attachment.id} className={`attachment-chip ${attachment.status === "failed" ? "attachment-chip-error" : ""}`} title={attachment.error || attachment.file.name} initial={reduced ? false : { opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: reduced ? 0 : motionTokens.quick }}>
                 {attachment.status === "uploading" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
                 <span className="max-w-48 truncate">{attachment.file.name}</span>
                 <span className="text-ink-3">{formatBytes(attachment.file.size, 1)}</span>
@@ -152,7 +155,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
-              </span>
+              </motion.span>
             ))}
           </div>
         )}
@@ -176,9 +179,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <Paperclip className="h-4 w-4" aria-hidden="true" />
           </button>
           <span className="t-meta hidden text-ink-3 sm:inline" aria-hidden="true">↵</span>
-          <button type="submit" className="send-button" disabled={busy || !objective.trim() || !canEdit} aria-label={busy ? "Starting investigation" : "Start investigation"}>
+          <motion.button type="submit" className="send-button" disabled={busy || !objective.trim() || !canEdit} aria-label={busy ? "Starting investigation" : "Start investigation"} whileHover={reduced ? undefined : { scale: 1.055 }} whileTap={reduced ? undefined : { scale: 0.94 }} transition={motionTokens.spring}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-          </button>
+          </motion.button>
         </div>
       </div>
       <p className="sr-only" role="status">{busy ? "Starting investigation" : ""}</p>
