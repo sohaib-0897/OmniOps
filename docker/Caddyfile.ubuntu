@@ -1,12 +1,16 @@
-:80 {
-    encode zstd gzip
-    @api path /api/*
-    handle @api {
-        reverse_proxy backend:8000 {
-            flush_interval -1
-        }
-    }
-    handle {
-        reverse_proxy frontend:3000
-    }
+http://130.210.55.168 {
+	redir https://omniops.duckdns.org{uri} permanent
+}
+
+omniops.duckdns.org {
+	encode zstd gzip
+	@api path /api/*
+	handle @api {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
 }

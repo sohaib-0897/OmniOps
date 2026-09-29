@@ -45,19 +45,9 @@ The API stores uploaded sources. Ingestion extracts text and source locations; s
 
 ## Local development
 
-The supported local stack is [the Ubuntu Compose profile](docker-compose.ubuntu.yml): PostgreSQL, migration job, API, worker, frontend, local sandbox runner, and Caddy on port 80. Docker Compose and a reachable text provider are required for an investigation. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`.
+The Ubuntu Compose profile is the production deployment stack: PostgreSQL, migration job, API, worker, frontend, sandbox runner, and Caddy on ports 80 and 443. Its Caddy configuration serves `omniops.duckdns.org`, redirects HTTP to HTTPS, and requires that hostname to resolve to the VM. It is not a `http://localhost` stack; `.env.example` local HTTP values are for development setups, not this production Compose profile.
 
-1. Copy [`.env.example`](.env.example) to `.env`. Set distinct random values for `POSTGRES_PASSWORD`, `SECRET_KEY`, and `SANDBOX_RUNNER_TOKEN`; set `DATABASE_URL` with the same database password. For local HTTP set `ENVIRONMENT=development`, `CORS_ORIGINS=["http://localhost"]`, `ALLOW_INSECURE_HTTP=true`, `COOKIE_SECURE=false`, and `PASSWORD_RESET_BASE_URL=http://localhost`. Keep `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL=http://host.docker.internal:11434` for a local model.
-2. Run:
-
-   ```bash
-   docker compose --env-file .env -f docker-compose.ubuntu.yml config --quiet
-   docker compose --env-file .env -f docker-compose.ubuntu.yml build backend frontend
-   docker compose --env-file .env -f docker-compose.ubuntu.yml build sandbox-image sandbox-runner
-   docker compose --env-file .env -f docker-compose.ubuntu.yml up --no-build -d
-   ```
-
-3. Open `http://localhost`. Check `http://localhost/api/v1/readiness`, upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
+For a local investigation, run the app with a development environment that provides PostgreSQL, the API, worker, frontend, sandbox runner, and a reachable text provider. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`. For the deployed Ubuntu profile, open `https://omniops.duckdns.org` and check `/api/v1/readiness`; upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
 
 Without SMTP, local password reset writes a private message under the backend's configured `STORAGE_DIR/dev-password-reset-outbox/`. Read the link there; reset tokens never appear in the product UI or logs. Production requires authenticated STARTTLS SMTP and an HTTPS `PASSWORD_RESET_BASE_URL`; the [production Compose profile](docker-compose.prod.yml) requires these settings. Apply the migration head before starting the updated API. The local runner controls the host Docker daemon; [deployment notes](DEPLOY_UBUNTU.md) explain the network boundary and production runner requirements.
 
@@ -78,7 +68,7 @@ Run `node scripts/ui_frontend_tests.cjs` from the repository root. From `fronten
 - Citation validation checks reference integrity and quoted text; it does not prove that a model's interpretation is true. No independent real-world accuracy or hallucination rate is measured.
 - Semantic retrieval quality has not been evaluated with a compatible live embedding credential. Lexical PostgreSQL retrieval remains available without embeddings.
 - Vision and audio paths require configured external providers; a readiness capability label does not establish their accuracy.
-- The local runner shares the host Docker control plane. Dedicated runner hosting and external TLS ingress remain deployment work.
+- The local runner shares the host Docker control plane. Dedicated runner hosting remains deployment work. The Ubuntu deployment uses Caddy automatic HTTPS for its configured public hostname.
 - Python dependencies use lower bounds rather than a lockfile; future resolver runs should be checked.
 
 ## License

@@ -1,6 +1,6 @@
 # Deploy OmniOps on one Ubuntu VM
 
-This profile runs Caddy on port 80, Next.js, FastAPI, a background worker, PostgreSQL with pgvector, and the authenticated sandbox runner. Only Caddy publishes a port. Use a fresh Ubuntu VM with enough memory and disk for the Docker images, PostgreSQL, and uploaded files.
+This profile runs Caddy on ports 80 and 443, Next.js, FastAPI, a background worker, PostgreSQL with pgvector, and the authenticated sandbox runner. Only Caddy publishes public ports. Use a fresh Ubuntu VM with enough memory and disk for the Docker images, PostgreSQL, and uploaded files.
 
 ## Install Docker and clone
 
@@ -73,16 +73,17 @@ docker compose -f docker-compose.ubuntu.yml up -d
 
 ## Firewall
 
-Configure the VM provider firewall to permit only inbound TCP 22 and 80. On the VM:
+Configure the VM provider firewall to permit inbound TCP 22, 80, and 443. On the VM:
 
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw --force enable
 sudo ufw status verbose
 ```
 
-Do not open 3000, 8000, 5432, or 9100. Docker publishes only Caddy port 80. The Docker socket grants the runner powerful host control; keep SSH access restricted, protect `.env`, patch the VM, and prefer a separate/rootless runner host when available.
+Do not open 3000, 8000, 5432, or 9100. Docker publishes only Caddy ports 80 and 443. The Docker socket grants the runner powerful host control; keep SSH access restricted, protect `.env`, patch the VM, and prefer a separate/rootless runner host when available.
 
 ## Operations
 
@@ -106,18 +107,21 @@ docker compose -f docker-compose.ubuntu.yml exec -T postgres pg_dump -U omniops 
 docker run --rm -v omniops-ubuntu_app_storage:/data:ro -v "$PWD/backups:/backup" alpine tar -czf /backup/app-storage-$(date +%F).tgz -C /data .
 ```
 
-## Add a domain and HTTPS later
+## Production hostname and HTTPS
 
-Point the domain A record at the VM, allow inbound TCP 443 at the provider and with `sudo ufw allow 443/tcp`, then change the first line of `docker/Caddyfile.ubuntu` from `:80 {` to `mydomain.com {`. Add `"443:443"` and `"443:443/udp"` under Caddy `ports` in `docker-compose.ubuntu.yml`. In `.env`, append:
+Use a hostname whose A record points to the VM. A free DuckDNS hostname is supported; for example, `omniops.duckdns.org` should resolve to the VM's public IPv4 address before Caddy starts requesting a certificate. Allow inbound TCP 80 and 443 at the cloud firewall and with UFW. Caddy listens for the hostname and obtains/renews a publicly trusted certificate automatically. TCP 443 is published; UDP 443 for HTTP/3 is optional and is not required for HTTPS.
+
+Set the production transport values in `.env` (do not commit the file):
 
 ```dotenv
-CORS_ORIGINS=["https://mydomain.com"]
+CORS_ORIGINS=["https://omniops.duckdns.org"]
 ALLOW_INSECURE_HTTP=false
 COOKIE_SECURE=true
+PASSWORD_RESET_BASE_URL=https://omniops.duckdns.org
 ```
 
-Restart with `docker compose -f docker-compose.ubuntu.yml up -d --force-recreate backend worker caddy`. Caddy obtains and renews the certificate automatically. Keep Caddy's named data volume. The API path remains `/api/v1`; no frontend rebuild is needed.
+Keep `COOKIE_SAMESITE=lax`, SMTP configuration, and Caddy's named `caddy_data` and `caddy_config` volumes. Recreate backend and worker to apply environment changes, and Caddy to apply the hostname and port mapping. PostgreSQL and the frontend do not need recreation for these changes. The API path remains `/api/v1`; no frontend rebuild is needed. Caddy redirects hostname HTTP to HTTPS automatically and redirects raw-IP HTTP to the canonical hostname.
 
 ## HTTP security limit
 
-HTTP sends logins, cookies, and data without transport encryption. Use this IP profile only as a temporary deployment and enable HTTPS before handling sensitive real data. App rate limits and sandbox isolation remain active. PostgreSQL and the runner have no published ports.
+The production hostname should be used for browser access. Caddy redirects hostname HTTP to HTTPS. App rate limits and sandbox isolation remain active. PostgreSQL, backend, Ollama, and the runner have no published host ports.
