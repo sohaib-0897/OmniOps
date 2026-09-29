@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy import inspect as sa_inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
 from app.agent.persistence import finalize_synthesis, persist_claim
 from app.agent.runtime import (
     DurablePlanExecutor,
@@ -18,6 +20,7 @@ from app.agent.runtime import (
     PlanStepSpec,
     RuntimeBudget,
     RuntimeErrorCode,
+    WORKER_LEASE_TTL_SECONDS,
     ToolDefinition,
     ToolRegistry,
     acquire_lease,
@@ -48,6 +51,9 @@ from app.models.evidence import (
 )
 from app.models.investigation import AgentObservation, InvestigationSession, InvestigationStatus, RuntimeState
 from app.rag.hybrid_search import HybridRetriever
+
+
+PROVIDER_LEASE_HEARTBEAT_SECONDS = 30.0
 
 
 class RetrievalInput(BaseModel):
@@ -263,6 +269,96 @@ class InvestigationRuntime:
             if not await renew_lease(self.db, investigation, worker_id):
                 raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
 
+    async def _provider_call_with_lease_heartbeat(
+        self,
+        investigation: InvestigationSession,
+        worker_id: str | None,
+        provider_call: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Keep a bounded lease alive during a slow provider call, using its own DB session."""
+        if not worker_id or self.db.get_bind().dialect.name == "sqlite":
+            return await provider_call()
+
+        # The same session may have written synthesis.started and read the input.
+        # Commit the initial renewal before the independent heartbeat can update
+        # this row, so it cannot wait behind a lock held by this session.
+        await self._renew_provider_lease(investigation, worker_id)
+        await self.db.commit()
+        stop_heartbeat = asyncio.Event()
+        lease_lost = asyncio.Event()
+        cancellation_requested = asyncio.Event()
+
+        async def heartbeat() -> None:
+            while True:
+                try:
+                    await asyncio.wait_for(
+                        stop_heartbeat.wait(), timeout=PROVIDER_LEASE_HEARTBEAT_SECONDS,
+                    )
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                now = datetime.now(timezone.utc)
+                try:
+                    async with AsyncSessionLocal() as lease_db:
+                        result = await lease_db.execute(
+                            update(InvestigationSession)
+                            .where(
+                                InvestigationSession.id == investigation.id,
+                                InvestigationSession.worker_id == worker_id,
+                                InvestigationSession.lease_expires_at >= now,
+                                InvestigationSession.cancellation_requested.is_(False),
+                            )
+                            .values(lease_expires_at=now + timedelta(seconds=WORKER_LEASE_TTL_SECONDS))
+                        )
+                        if result.rowcount:
+                            await lease_db.commit()
+                            continue
+                        await lease_db.rollback()
+                        row = (await lease_db.execute(
+                            select(InvestigationSession.cancellation_requested).where(
+                                InvestigationSession.id == investigation.id,
+                            )
+                        )).one_or_none()
+                        await lease_db.rollback()
+                        if row and row[0]:
+                            cancellation_requested.set()
+                        else:
+                            lease_lost.set()
+                        return
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    lease_lost.set()
+                    return
+
+        provider_task = asyncio.create_task(provider_call())
+        heartbeat_task = asyncio.create_task(heartbeat())
+        try:
+            done, _ = await asyncio.wait(
+                {provider_task, heartbeat_task}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            if heartbeat_task in done:
+                provider_task.cancel()
+                await asyncio.gather(provider_task, return_exceptions=True)
+                if cancellation_requested.is_set():
+                    raise RuntimeError(RuntimeErrorCode.CANCELLED.value)
+                raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
+            result = provider_task.result()
+            stop_heartbeat.set()
+            await heartbeat_task
+            if cancellation_requested.is_set():
+                raise RuntimeError(RuntimeErrorCode.CANCELLED.value)
+            if lease_lost.is_set():
+                raise RuntimeError(RuntimeErrorCode.WORKER_LEASE_UNAVAILABLE.value)
+            return result
+        finally:
+            stop_heartbeat.set()
+            if not provider_task.done():
+                provider_task.cancel()
+            if not heartbeat_task.done():
+                heartbeat_task.cancel()
+            await asyncio.gather(provider_task, heartbeat_task, return_exceptions=True)
+
     async def _provider_plan(
         self,
         investigation: InvestigationSession,
@@ -325,11 +421,16 @@ class InvestigationRuntime:
             "formula_or_code": row.formula_or_code, "input_values": row.input_values,
             "computed_output": row.computed_output, "reproducibility_hash": row.reproducibility_hash,
         } for row in calculations]
-        await self._renew_provider_lease(investigation, worker_id)
-        proposal = await self.llm_client.verify_and_synthesize(
-            investigation.objective,
-            [{"classification": row.classification, "success": row.success, "summary": row.summary} for row in observations],
-            evidence_payload, calculation_payload,
+        observation_payload = [
+            {"classification": row.classification, "success": row.success, "summary": row.summary}
+            for row in observations
+        ]
+        proposal = await self._provider_call_with_lease_heartbeat(
+            investigation,
+            worker_id,
+            lambda: self.llm_client.verify_and_synthesize(
+                investigation.objective, observation_payload, evidence_payload, calculation_payload,
+            ),
         )
 
         report_claims: list[dict[str, Any]] = []

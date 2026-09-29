@@ -24,6 +24,9 @@ from app.models.investigation import (
 from app.models.evidence import ContradictionRecord, RuntimeEvent, EvidenceItem, CalculationRecord, VerifiedClaim
 
 
+WORKER_LEASE_TTL_SECONDS = 120
+
+
 class RuntimeErrorCode(str, Enum):
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     TOOL_UNAVAILABLE = "TOOL_UNAVAILABLE"
@@ -274,7 +277,7 @@ def reflect_on_observation(*, decision: ObservationDecision, evidence_sufficient
     return ReflectionResult(step_satisfied=decision in {ObservationDecision.VERIFY, ObservationDecision.COMPLETE_STEP}, evidence_sufficient=True, contradiction_detected=contradiction_detected, reason_code="STEP_SATISFIED")
 
 
-async def acquire_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = 120) -> bool:
+async def acquire_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = WORKER_LEASE_TTL_SECONDS) -> bool:
     """Atomically acquire a bounded worker lease; safe across concurrent workers."""
     now = datetime.now(timezone.utc)
     expires = now.timestamp() + ttl_seconds
@@ -304,7 +307,7 @@ async def release_lease(session: AsyncSession, investigation_id: UUID, worker_id
     await session.flush()
 
 
-async def renew_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = 120) -> bool:
+async def renew_lease(session: AsyncSession, investigation: InvestigationSession, worker_id: str, ttl_seconds: int = WORKER_LEASE_TTL_SECONDS) -> bool:
     from datetime import timedelta
     now = datetime.now(timezone.utc)
     stmt = update(InvestigationSession).where(
@@ -325,7 +328,7 @@ async def owns_lease(session: AsyncSession, investigation_id: UUID, worker_id: s
     return bool(row and row[0] == worker_id and row[1] and row[1] >= datetime.now(timezone.utc))
 
 
-async def claim_next_investigation(session: AsyncSession, worker_id: str, ttl_seconds: int = 120) -> Optional[InvestigationSession]:
+async def claim_next_investigation(session: AsyncSession, worker_id: str, ttl_seconds: int = WORKER_LEASE_TTL_SECONDS) -> Optional[InvestigationSession]:
     """Claim one eligible investigation atomically on PostgreSQL."""
     now = datetime.now(timezone.utc)
     from datetime import timedelta

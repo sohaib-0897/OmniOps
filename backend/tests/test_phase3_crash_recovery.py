@@ -31,6 +31,23 @@ async def test_crash_before_commit_orphans_attempt_and_recovery_is_bounded(db_se
 
 
 @pytest.mark.asyncio
+async def test_expired_worker_cannot_finalize_synthesis(db_session, test_user, test_workspace):
+    inv = InvestigationSession(workspace_id=test_workspace.id, user_id=test_user.id, objective="fenced synthesis")
+    db_session.add(inv); await db_session.commit()
+    investigation_id = inv.id
+    assert await acquire_lease(db_session, inv, "worker-a")
+    await db_session.commit()
+    inv.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+
+    with pytest.raises(RuntimeError, match="WORKER_LEASE_UNAVAILABLE"):
+        await finalize_synthesis(db_session, inv, {"executive_summary": "must not persist"}, 1, worker_id="worker-a")
+    await db_session.rollback()
+    stored = await db_session.get(InvestigationSession, investigation_id)
+    assert stored.final_response is None
+
+
+@pytest.mark.asyncio
 async def test_crash_after_commit_reuses_authoritative_synthesis(db_session, test_user, test_workspace):
     inv = InvestigationSession(workspace_id=test_workspace.id, user_id=test_user.id, objective="after commit", plan_version=1)
     db_session.add(inv); await db_session.commit()

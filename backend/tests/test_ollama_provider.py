@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+import asyncio
 
 import httpx
 import pytest
@@ -11,6 +12,7 @@ from app.llm.client import OmniOpsLLMClient
 from app.llm.gemini_provider import GeminiProvider
 from app.llm.ollama_provider import OllamaProvider
 from app.llm.openai_provider import OpenAIProvider
+from app.agent.runtime import WORKER_LEASE_TTL_SECONDS
 
 
 class FakeResponse:
@@ -159,6 +161,11 @@ async def test_ollama_requests_configured_context_window(monkeypatch):
         OllamaProvider("http://ollama:11434", "qwen3:4b", num_ctx=0)
     assert raised.value.code == "LLM_PROVIDER_REQUIRED"
 
+    # A long provider timeout is safe only because production provider calls
+    # are guarded by the durable runtime's independent lease heartbeat.
+    assert OllamaProvider("http://ollama:11434", "qwen3:1.7b", timeout_seconds=240).timeout_seconds == 240
+    assert OllamaProvider("http://ollama:11434", "qwen3:1.7b", timeout_seconds=240).timeout_seconds > WORKER_LEASE_TTL_SECONDS
+
 
 @pytest.mark.asyncio
 async def test_ollama_context_overflow_is_explicit_and_not_retried(monkeypatch):
@@ -296,7 +303,130 @@ async def test_provider_calls_renew_worker_lease(monkeypatch):
 
     await runtime._renew_provider_lease(investigation, "worker-1")
     assert calls == [("investigation-id", "worker-1")]
-    assert OllamaProvider("http://ollama:11434", "qwen3:4b").timeout_seconds < OllamaProvider.WORKER_LEASE_SECONDS
+    assert OllamaProvider("http://ollama:11434", "qwen3:4b", timeout_seconds=240).timeout_seconds > WORKER_LEASE_TTL_SECONDS
+
+
+class FakeLeaseSession:
+    def __init__(self, rowcount=1, cancelled=False):
+        self.rowcount = rowcount
+        self.cancelled = cancelled
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def execute(self, statement):
+        if statement.__class__.__name__ == "Update":
+            return SimpleNamespace(rowcount=self.rowcount)
+        return SimpleNamespace(one_or_none=lambda: (self.cancelled,))
+
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_long_provider_call_renews_lease_in_separate_sessions(monkeypatch):
+    sessions = []
+    monkeypatch.setattr("app.agent.service.PROVIDER_LEASE_HEARTBEAT_SECONDS", 0.005)
+    monkeypatch.setattr("app.agent.service.AsyncSessionLocal", lambda: sessions.append(FakeLeaseSession()) or sessions[-1])
+    monkeypatch.setattr("app.agent.service.renew_lease", lambda *_args: asyncio.sleep(0, result=True))
+    db = SimpleNamespace(
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+        commit=lambda: asyncio.sleep(0),
+    )
+    runtime = InvestigationRuntime(db)
+    async def provider_call():
+        await asyncio.sleep(0.03)
+        return "valid report"
+
+    result = await runtime._provider_call_with_lease_heartbeat(
+        SimpleNamespace(id="investigation-id"), "worker-1", provider_call,
+    )
+
+    assert result == "valid report"
+    assert len(sessions) >= 1
+
+
+@pytest.mark.asyncio
+async def test_provider_lease_loss_cancels_call_and_fails_closed(monkeypatch):
+    cancelled = []
+    monkeypatch.setattr("app.agent.service.PROVIDER_LEASE_HEARTBEAT_SECONDS", 0.005)
+    monkeypatch.setattr("app.agent.service.AsyncSessionLocal", lambda: FakeLeaseSession(rowcount=0))
+    monkeypatch.setattr("app.agent.service.renew_lease", lambda *_args: asyncio.sleep(0, result=True))
+    db = SimpleNamespace(
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+        commit=lambda: asyncio.sleep(0),
+    )
+    runtime = InvestigationRuntime(db)
+    async def provider_call():
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    with pytest.raises(RuntimeError, match="WORKER_LEASE_UNAVAILABLE"):
+        await runtime._provider_call_with_lease_heartbeat(
+            SimpleNamespace(id="investigation-id"), "worker-1", provider_call,
+        )
+
+    assert cancelled == [True]
+
+
+@pytest.mark.asyncio
+async def test_provider_heartbeat_stops_call_when_investigation_cancelled(monkeypatch):
+    cancelled = []
+    monkeypatch.setattr("app.agent.service.PROVIDER_LEASE_HEARTBEAT_SECONDS", 0.005)
+    monkeypatch.setattr("app.agent.service.AsyncSessionLocal", lambda: FakeLeaseSession(rowcount=0, cancelled=True))
+    monkeypatch.setattr("app.agent.service.renew_lease", lambda *_args: asyncio.sleep(0, result=True))
+    db = SimpleNamespace(
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+        commit=lambda: asyncio.sleep(0),
+    )
+    runtime = InvestigationRuntime(db)
+    async def provider_call():
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    with pytest.raises(RuntimeError, match="CANCELLED"):
+        await runtime._provider_call_with_lease_heartbeat(
+            SimpleNamespace(id="investigation-id"), "worker-1", provider_call,
+        )
+
+    assert cancelled == [True]
+
+
+@pytest.mark.asyncio
+async def test_provider_error_stops_lease_heartbeat(monkeypatch):
+    sessions = []
+    monkeypatch.setattr("app.agent.service.PROVIDER_LEASE_HEARTBEAT_SECONDS", 0.005)
+    monkeypatch.setattr("app.agent.service.AsyncSessionLocal", lambda: sessions.append(FakeLeaseSession()) or sessions[-1])
+    monkeypatch.setattr("app.agent.service.renew_lease", lambda *_args: asyncio.sleep(0, result=True))
+    db = SimpleNamespace(
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+        commit=lambda: asyncio.sleep(0),
+    )
+    runtime = InvestigationRuntime(db)
+
+    async def provider_call():
+        await asyncio.sleep(0.02)
+        raise RuntimeError("PROVIDER_TIMEOUT")
+
+    with pytest.raises(RuntimeError, match="PROVIDER_TIMEOUT"):
+        await runtime._provider_call_with_lease_heartbeat(
+            SimpleNamespace(id="investigation-id"), "worker-1", provider_call,
+        )
+    count = len(sessions)
+    await asyncio.sleep(0.02)
+    assert len(sessions) == count
 
 
 @pytest.mark.asyncio

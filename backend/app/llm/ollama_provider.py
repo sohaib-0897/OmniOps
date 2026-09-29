@@ -26,9 +26,7 @@ class OllamaProvider(BaseLLMClient):
 
     MAX_ATTEMPTS = 2
     RETRY_DELAY_SECONDS = 1.0
-    WORKER_LEASE_SECONDS = 120.0
-
-    def __init__(self, base_url: str, model: str, timeout_seconds: float = 90.0, num_ctx: int = 8192):
+    def __init__(self, base_url: str, model: str, timeout_seconds: float = 240.0, num_ctx: int = 8192):
         self.base_url = base_url.rstrip("/")
         self.model = model.strip()
         self.timeout_seconds = float(timeout_seconds)
@@ -45,11 +43,11 @@ class OllamaProvider(BaseLLMClient):
                 "LLM_PROVIDER_REQUIRED",
                 "Ollama requires OLLAMA_BASE_URL and OLLAMA_MODEL.",
             )
-        if self.timeout_seconds <= 0 or self.timeout_seconds >= self.WORKER_LEASE_SECONDS:
+        if self.timeout_seconds <= 0:
             raise ProviderError(
                 ProviderState.UNAVAILABLE,
                 "LLM_PROVIDER_REQUIRED",
-                "OLLAMA_TIMEOUT_SECONDS must be greater than zero and below the worker lease duration.",
+                "OLLAMA_TIMEOUT_SECONDS must be greater than zero.",
             )
 
     async def readiness(self) -> Dict[str, str]:
