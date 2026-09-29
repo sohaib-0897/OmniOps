@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 import httpx
+from pathlib import Path
 from app.core.config import settings
 from app.core.database import get_db
 from app.ingestion.capabilities import capability_matrix
@@ -10,6 +13,17 @@ from app.schemas.common import ResponseEnvelope
 from app.core.observability import prometheus_metrics
 
 router = APIRouter(tags=["System"])
+
+
+def _migration_head_revision() -> str:
+    """Resolve the current migration head from the migrations shipped with this app."""
+    backend_root = Path(__file__).resolve().parents[3]
+    config = Config(str(backend_root / "alembic.ini"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
+def _is_migration_head(revision: str | None) -> bool:
+    return revision is not None and revision == _migration_head_revision()
 
 @router.get("/health", response_model=ResponseEnvelope[dict])
 async def health_check():
@@ -25,7 +39,7 @@ async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)
             vector = (await db.execute(text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='vector')"))).scalar()
             checks["pgvector"] = "ready" if vector else "unavailable"
             revision = (await db.execute(text("SELECT version_num FROM alembic_version"))).scalar_one_or_none()
-            checks["migrations"] = "ready" if revision == "20260912_final_audit_closure" else "out_of_date"
+            checks["migrations"] = "ready" if _is_migration_head(revision) else "out_of_date"
     except Exception:
         checks["database"] = "unavailable"
     if settings.ENVIRONMENT.lower() in {"production", "prod", "staging"}:

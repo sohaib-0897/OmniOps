@@ -9,6 +9,15 @@ import pandas as pd
 from app.models.user import User, Workspace, WorkspaceMembership, WorkspaceRole
 from app.models.document import SourceDocument, TabularDataset
 from app.core.config import settings
+from app.api.v1.health import _is_migration_head
+
+
+def test_migration_readiness_tracks_declared_alembic_head(monkeypatch):
+    monkeypatch.setattr("app.api.v1.health._migration_head_revision", lambda: "current-head")
+
+    assert _is_migration_head("current-head") is True
+    assert _is_migration_head("older-revision") is False
+    assert _is_migration_head(None) is False
 
 @pytest.mark.asyncio
 async def test_health_check_endpoint(client: AsyncClient):
