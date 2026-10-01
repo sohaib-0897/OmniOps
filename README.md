@@ -1,12 +1,105 @@
 # OmniOps
 
-OmniOps is a workspace for investigating business material. Bring documents, spreadsheets, images, and audio; ask a question; then follow each cited finding through its evidence and passage to the source. Investigations and their events are saved, so work can resume after a connection or worker interruption.
+[![CI](https://github.com/sohaib-0897/OmniOps/actions/workflows/ci.yml/badge.svg)](https://github.com/sohaib-0897/OmniOps/actions/workflows/ci.yml)
 
-The application uses Next.js, FastAPI, a separate worker, PostgreSQL with pgvector, and an authenticated container runner for Python calculations. Planning and synthesis use a configured text model; they are not deterministic accuracy guarantees.
+**Autonomous evidence-backed investigation platform with durable execution.**
+
+Upload documents, spreadsheets, images, and audio. Ask a question. OmniOps plans an investigation, retrieves relevant passages, gathers evidence, validates citations, and produces an analytical brief where every finding traces back to its source.
+
+**[Live Demo →](https://omniops.duckdns.org)**
+
+---
+
+## Architecture
+
+<p align="center">
+  <img src="docs/assets/omniops-architecture.svg" alt="OmniOps architecture diagram" width="820"/>
+</p>
+
+The system is composed of five layers:
+
+| Layer | Component | Role |
+| --- | --- | --- |
+| **Reverse proxy** | Caddy | Automatic HTTPS via Let's Encrypt, routes `/api` to FastAPI and everything else to Next.js |
+| **Frontend** | Next.js 15 (React 18) | Server-rendered UI, SSE event stream, workspace and evidence inspector |
+| **API** | FastAPI | REST endpoints, authentication (JWT + refresh rotation), source upload, SSE broadcast |
+| **Worker** | Durable investigation worker | Lease-based claiming, fenced execution, stage events, retry with idempotency |
+| **Storage** | PostgreSQL + pgvector | Full-text search, vector schema, runtime events, sessions, sources |
+| **Sandbox** | Authenticated runner + payload container | Isolated Python execution for calculations, no Docker socket on the backend |
+| **LLM** | Ollama (configurable) | Planning and synthesis; currently `qwen3:1.7b` on the live deployment |
+
+---
+
+## How an investigation works
+
+1. **Upload sources** — PDF, DOCX, XLSX, images, and audio are ingested. Text, tables, and source locations are extracted. Images use OCR (Tesseract); audio uses a configured transcription provider.
+2. **Ask a question** — The worker claims the investigation with a durable lease and asks the language model for a plan.
+3. **Retrieve passages** — PostgreSQL full-text search finds relevant passages across all workspace sources. The pgvector schema supports semantic retrieval when an embedding provider is configured.
+4. **Gather evidence** — The worker executes retrieval and calculation tools, records observations, and builds evidence chains. Calculations run in an isolated sandbox container.
+5. **Validate citations** — Citation integrity and quoted text are checked against the source passages. This validates reference accuracy, not the truth of a model's interpretation.
+6. **Produce the brief** — An analytical brief is saved with claims, citations, passages, source references, and calculation provenance. Every finding links back to its evidence.
+
+Stage events are persisted to PostgreSQL and broadcast via SSE. The browser reconnects and replays from the last seen event, so work resumes after a connection drop or worker restart.
+
+---
+
+## Durable worker and runtime
+
+The investigation worker is designed for reliability:
+
+- **Lease-based claiming** — A worker acquires an exclusive lease on an investigation. If the worker dies, the lease expires and another worker can recover the work.
+- **Fenced execution** — Each lease carries a fence token. Operations check the token before committing, preventing stale workers from corrupting state.
+- **Stage persistence** — Every stage transition (planning → retrieval → analysis → validation) is committed to PostgreSQL before proceeding.
+- **SSE event replay** — Runtime events are stored in the database. Clients reconnect with `Last-Event-ID` and receive the complete history, not just events after reconnection.
+- **Retry with idempotency** — Retried operations check whether their effect was already committed, avoiding duplicate work.
+- **Graceful shutdown** — Workers release their leases on SIGTERM, allowing immediate failover.
+
+---
+
+## Evidence and citation model
+
+OmniOps maintains a seven-stage evidence lineage:
+
+```
+Source → Extraction → Passage → Retrieval → Observation → Evidence → Claim
+```
+
+Each claim in the analytical brief carries citations that reference specific passages. The citation validator checks:
+
+- The cited passage exists in the workspace
+- The quoted text appears in that passage
+- The source location (page, section, row) is accurate
+
+This validates **reference integrity**, not factual correctness. The system does not independently verify whether a model's interpretation of a passage is true. No hallucination rate or factual precision metric is currently measured.
+
+---
+
+## Production deployment
+
+The live deployment runs on an **Oracle Cloud ARM64 VM** with **Ubuntu 24.04**:
+
+| Component | Detail |
+| --- | --- |
+| Orchestration | Docker Compose (`docker-compose.prod.yml`) |
+| Reverse proxy | Caddy with automatic Let's Encrypt HTTPS |
+| Frontend | Next.js 15, server-rendered |
+| API | FastAPI, 2 replicas behind Caddy |
+| Worker | Durable investigation worker |
+| Database | PostgreSQL 16 + pgvector extension |
+| Language model | Ollama `qwen3:1.7b` (private, on-VM) |
+| Sandbox | Authenticated runner with isolated payload containers |
+| TLS | Automatic via Caddy; HSTS termination is external |
+
+**Current retrieval status:**
+
+- ✅ Lexical retrieval (PostgreSQL full-text search): **working**
+- ⬚ Semantic embeddings (pgvector): **not currently active** — the vector schema and retrieval code exist, but the free deployment does not have a configured embedding provider
+
+The deployment guide is in [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md). The operational runbook is in [OPERATIONS.md](OPERATIONS.md).
+
+---
 
 ## Product screenshots
-
-The public story uses labelled, illustrative source sheets and passages. Authenticated views show saved application data.
 
 ![OmniOps landing page with a source-sheet exhibit](docs/screenshots/landing-hero.png)
 
@@ -18,42 +111,62 @@ The public story uses labelled, illustrative source sheets and passages. Authent
 
 Home, Sources, sign in, and mobile views are in [the screenshot directory](docs/screenshots/).
 
-## Key capabilities
+---
 
-- Ingest PDF, DOCX, spreadsheet, image, and audio sources. Extraction status and provider failures are explicit.
-- Search workspace passages with PostgreSQL full text and optional pgvector retrieval. Source locations and table context remain inspectable where available.
-- Run durable investigations with saved stage events, reconnectable SSE, cancellation, and failure states driven by actual backend activity.
-- Inspect claims, citations, passages, source tracks, and calculation provenance in an analytical brief. Verification checks citation integrity and quoted text, not the truth of an interpretation.
-- Use a coherent interface across the public story, authentication, Home, Sources, and workspaces. Fresh loads start light; Dark and System are selectable for the current page.
-- Register, sign in, recover a password through a one-time expiring link, and manage a revocable session.
+## Tech stack
 
-## Architecture
+| Layer | Technology |
+| --- | --- |
+| Frontend | Next.js 15, React 18, TypeScript, Tailwind CSS 3 |
+| API | FastAPI, Pydantic, async SQLAlchemy, asyncpg |
+| Database | PostgreSQL 16, pgvector, Alembic migrations |
+| Auth | JWT access (15 min), HttpOnly refresh cookie, session rotation, replay-family revocation |
+| Ingestion | PyMuPDF, python-docx, openpyxl, Tesseract OCR, Pillow |
+| LLM | Provider-agnostic (Ollama, Gemini); currently Ollama on deployment |
+| Sandbox | Docker-based isolated runner; backend has no Docker socket |
+| Observability | Prometheus-format metrics, JSON request logs, request correlation, health/readiness endpoints |
+| CI | GitHub Actions — backend tests, frontend typecheck, lint, build |
 
-```mermaid
-flowchart LR
-    UI[Next.js] -->|REST and SSE| API[FastAPI]
-    API --> DB[(PostgreSQL + pgvector)]
-    API --> Files[(Source storage)]
-    Worker[Investigation worker] --> DB
-    Worker -->|planning and synthesis| LLM[Configured text provider]
-    Worker -->|retrieval and evidence| DB
-    Worker -->|Python execution| Runner[Authenticated sandbox runner]
-    Runner --> Payload[Isolated payload container]
+---
+
+## Testing
+
+```bash
+# Backend regression tests (needs PostgreSQL + POSTGRES_TEST_DATABASE_URL)
+python -m pytest backend/tests -q --disable-warnings
+
+# Frontend
+cd frontend
+npx tsc --noEmit
+npm run lint
+npm run build
+cd ..
+
+# Deterministic authored evaluation scenarios
+python -m evals.runner
+
+# Frontend UI tests
+node scripts/ui_frontend_tests.cjs
 ```
 
-The API stores uploaded sources. Ingestion extracts text and source locations; supported media can use OCR or configured multimodal providers. The worker claims an investigation, asks the text provider for a plan, dispatches registered retrieval or calculation tools, records observations and evidence, then validates and saves the brief. The browser reads saved state and events, including after reconnecting. See the [engineering walkthrough](docs/ENGINEERING.md) for code paths and tradeoffs.
+See [CI workflow](.github/workflows/ci.yml), the [reproducibility audit](docs/REPRODUCIBILITY_AUDIT.md), and [frontend revamp verification](FRONTEND_REVAMP.md) for scope and actual results. Factual precision, citation precision, and hallucination rate remain `NOT_MEASURED`.
 
-## Local development
+---
 
-The Ubuntu Compose profile is the production deployment stack: PostgreSQL, migration job, API, worker, frontend, sandbox runner, and Caddy on ports 80 and 443. Its Caddy configuration serves `omniops.duckdns.org`, redirects HTTP to HTTPS, and requires that hostname to resolve to the VM. It is not a `http://localhost` stack; `.env.example` local HTTP values are for development setups, not this production Compose profile.
+## Current limitations
 
-For a local investigation, run the app with a development environment that provides PostgreSQL, the API, worker, frontend, sandbox runner, and a reachable text provider. For local Ollama, pull `qwen3:4b` and make it reachable from Docker at `host.docker.internal:11434`. For the deployed Ubuntu profile, open `https://omniops.duckdns.org` and check `/api/v1/readiness`; upload a source such as the [fictional operating review](docs/demo/fictional-operating-review.txt), wait for **Ready**, and ask a question.
+- **Citation validation checks reference integrity and quoted text** — it does not prove that a model's interpretation is true. No independent real-world accuracy or hallucination rate is measured.
+- **Semantic retrieval is not evaluated** — a compatible live embedding credential is not available on the free deployment. Lexical PostgreSQL retrieval remains available without embeddings.
+- **Vision and audio require external providers** — a readiness capability label does not establish their accuracy.
+- **The local runner shares the host Docker control plane** — dedicated runner hosting remains deployment work.
+- **Python dependencies use lower bounds** rather than a lockfile; future resolver runs should be checked.
+- **Metrics are per-process**, not a shared aggregation system.
+- **PostgreSQL RLS is not enabled** — application SQL filtering is authoritative.
+- **TLS/HSTS termination is external** to the application containers.
 
-Without SMTP, local password reset writes a private message under the backend's configured `STORAGE_DIR/dev-password-reset-outbox/`. Read the link there; reset tokens never appear in the product UI or logs. Production requires authenticated STARTTLS SMTP and an HTTPS `PASSWORD_RESET_BASE_URL`; the [production Compose profile](docker-compose.prod.yml) requires these settings. Apply the migration head before starting the updated API. The local runner controls the host Docker daemon; [deployment notes](DEPLOY_UBUNTU.md) explain the network boundary and production runner requirements.
+---
 
-## Verification
-
-Run `node scripts/ui_frontend_tests.cjs` from the repository root. From `frontend/`, run `npx tsc --noEmit`, `npm run lint`, and `npm run build`. Backend regression tests run with `python -m pytest backend/tests -q --disable-warnings`; PostgreSQL integration cases need a dedicated migrated pgvector database and `POSTGRES_TEST_DATABASE_URL`. See [CI](.github/workflows/ci.yml), the [reproducibility audit](docs/REPRODUCIBILITY_AUDIT.md), and [frontend revamp verification](FRONTEND_REVAMP.md) for scope and actual results. Deterministic authored scenarios run with `python -m evals.runner`; factual precision, citation precision, and hallucination rate remain `NOT_MEASURED`.
+## Repository layout
 
 | Path | Purpose |
 | --- | --- |
@@ -62,14 +175,14 @@ Run `node scripts/ui_frontend_tests.cjs` from the repository root. From `fronten
 | `frontend/src/` | Public story, authentication, workspace, and API/SSE client |
 | `docker/`, `docker-compose*.yml` | Images and deployment profiles |
 | `backend/tests/`, `evals/`, `scripts/` | Regression tests, authored scenarios, and operational probes |
+| `docs/` | Engineering walkthrough, deployment guide, screenshots |
 
-## Limitations
+## Further reading
 
-- Citation validation checks reference integrity and quoted text; it does not prove that a model's interpretation is true. No independent real-world accuracy or hallucination rate is measured.
-- Semantic retrieval quality has not been evaluated with a compatible live embedding credential. Lexical PostgreSQL retrieval remains available without embeddings.
-- Vision and audio paths require configured external providers; a readiness capability label does not establish their accuracy.
-- The local runner shares the host Docker control plane. Dedicated runner hosting remains deployment work. The Ubuntu deployment uses Caddy automatic HTTPS for its configured public hostname.
-- Python dependencies use lower bounds rather than a lockfile; future resolver runs should be checked.
+- [Engineering walkthrough](docs/ENGINEERING.md) — code paths, retrieval internals, and tradeoffs
+- [Deployment guide](DEPLOY_UBUNTU.md) — Ubuntu 24.04 ARM64 production setup
+- [Operations runbook](OPERATIONS.md) — health checks, backup, migration, incident response
+- [Phase 6 remediation](PHASE_6_REMEDIATION.md) — security hardening and platform closure
 
 ## License
 

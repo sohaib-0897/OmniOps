@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 620" font-family="system-ui,-apple-system,sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <style>
+    .box { rx: 8; ry: 8; stroke-width: 1.5; }
+    .label { font-weight: 600; fill: #1e293b; }
+    .sublabel { font-size: 11; fill: #64748b; }
+    .edge { stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .edge-blue { stroke: #3b82f6; stroke-width: 1.5; fill: none; marker-end: url(#arrow-blue); }
+    .section { font-size: 11; font-weight: 700; fill: #94a3b8; letter-spacing: 1.2px; text-transform: uppercase; }
+  </style>
+
+  <!-- Background -->
+  <rect width="820" height="620" fill="#fafaf9" rx="12"/>
+
+  <!-- Title -->
+  <text x="410" y="32" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">OmniOps Architecture</text>
+
+  <!-- ── Client tier ── -->
+  <text x="60" y="72" class="section">Client</text>
+  <rect x="50" y="82" width="160" height="52" fill="#fef3c7" stroke="#f59e0b" class="box"/>
+  <text x="130" y="105" text-anchor="middle" class="label">Browser</text>
+  <text x="130" y="120" text-anchor="middle" class="sublabel">HTTPS</text>
+
+  <!-- ── Reverse proxy ── -->
+  <text x="300" y="72" class="section">Reverse Proxy</text>
+  <rect x="290" y="82" width="160" height="52" fill="#e0f2fe" stroke="#0ea5e9" class="box"/>
+  <text x="370" y="105" text-anchor="middle" class="label">Caddy</text>
+  <text x="370" y="120" text-anchor="middle" class="sublabel">Let's Encrypt TLS</text>
+
+  <!-- ── Frontend ── -->
+  <text x="555" y="72" class="section">Frontend</text>
+  <rect x="540" y="82" width="160" height="52" fill="#dcfce7" stroke="#22c55e" class="box"/>
+  <text x="620" y="105" text-anchor="middle" class="label">Next.js 15</text>
+  <text x="620" y="120" text-anchor="middle" class="sublabel">React 18 · SSR</text>
+
+  <!-- Client → Caddy -->
+  <line x1="210" y1="108" x2="286" y2="108" stroke="#64748b" class="edge"/>
+
+  <!-- Caddy → Next.js -->
+  <line x1="450" y1="98" x2="536" y2="98" stroke="#64748b" class="edge"/>
+
+  <!-- ── API tier ── -->
+  <text x="300" y="172" class="section">API</text>
+  <rect x="290" y="182" width="160" height="52" fill="#ede9fe" stroke="#8b5cf6" class="box"/>
+  <text x="370" y="205" text-anchor="middle" class="label">FastAPI</text>
+  <text x="370" y="220" text-anchor="middle" class="sublabel">REST · SSE · Auth</text>
+
+  <!-- Caddy → FastAPI -->
+  <line x1="370" y1="134" x2="370" y2="178" stroke="#64748b" class="edge"/>
+  <text x="385" y="162" class="sublabel">/api</text>
+
+  <!-- ── Worker tier ── -->
+  <text x="60" y="282" class="section">Durable Worker</text>
+  <rect x="50" y="292" width="200" height="70" fill="#fce7f3" stroke="#ec4899" class="box"/>
+  <text x="150" y="318" text-anchor="middle" class="label">Investigation Worker</text>
+  <text x="150" y="335" text-anchor="middle" class="sublabel">Lease · Fence · Retry</text>
+  <text x="150" y="349" text-anchor="middle" class="sublabel">Stage events · SSE broadcast</text>
+
+  <!-- FastAPI → Worker (conceptual: both read/write DB) -->
+  <line x1="290" y1="220" x2="254" y2="292" stroke="#64748b" class="edge"/>
+
+  <!-- ── LLM ── -->
+  <text x="60" y="410" class="section">Language Model</text>
+  <rect x="50" y="420" width="200" height="52" fill="#fff7ed" stroke="#f97316" class="box"/>
+  <text x="150" y="443" text-anchor="middle" class="label">Ollama (qwen3)</text>
+  <text x="150" y="458" text-anchor="middle" class="sublabel">Planning · Synthesis</text>
+
+  <!-- Worker → LLM -->
+  <line x1="150" y1="362" x2="150" y2="416" stroke="#64748b" class="edge"/>
+
+  <!-- ── Database ── -->
+  <text x="370" y="282" class="section">Storage</text>
+  <rect x="350" y="292" width="200" height="70" fill="#f0f9ff" stroke="#0284c7" class="box"/>
+  <text x="450" y="318" text-anchor="middle" class="label">PostgreSQL + pgvector</text>
+  <text x="450" y="335" text-anchor="middle" class="sublabel">Lexical FTS · Vector schema</text>
+  <text x="450" y="349" text-anchor="middle" class="sublabel">Events · Sessions · Sources</text>
+
+  <!-- FastAPI → DB -->
+  <line x1="400" y1="234" x2="430" y2="288" stroke="#64748b" class="edge"/>
+
+  <!-- Worker → DB -->
+  <line x1="250" y1="330" x2="346" y2="330" stroke="#64748b" class="edge"/>
+
+  <!-- ── Source storage ── -->
+  <rect x="350" y="400" width="200" height="44" fill="#f0f9ff" stroke="#0284c7" class="box"/>
+  <text x="450" y="425" text-anchor="middle" class="label">Source file storage</text>
+  <text x="450" y="439" text-anchor="middle" class="sublabel">Uploaded documents</text>
+
+  <!-- DB → Source storage (visual grouping line) -->
+  <line x1="450" y1="362" x2="450" y2="396" stroke="#0284c7" stroke-width="1" stroke-dasharray="4,3" fill="none"/>
+
+  <!-- ── Sandbox tier ── -->
+  <text x="610" y="282" class="section">Sandbox</text>
+  <rect x="590" y="292" width="190" height="52" fill="#fef9c3" stroke="#eab308" class="box"/>
+  <text x="685" y="315" text-anchor="middle" class="label">Sandbox Runner</text>
+  <text x="685" y="330" text-anchor="middle" class="sublabel">Authenticated · Docker API</text>
+
+  <rect x="590" y="370" width="190" height="44" fill="#fefce8" stroke="#ca8a04" class="box"/>
+  <text x="685" y="395" text-anchor="middle" class="label">Payload Container</text>
+  <text x="685" y="409" text-anchor="middle" class="sublabel">Isolated Python execution</text>
+
+  <!-- Runner → Payload -->
+  <line x1="685" y1="344" x2="685" y2="366" stroke="#64748b" class="edge"/>
+
+  <!-- Worker → Sandbox Runner -->
+  <line x1="250" y1="340" x2="586" y2="318" stroke="#64748b" class="edge"/>
+
+  <!-- ── Evidence flow (blue) ── -->
+  <text x="60" y="510" class="section">Evidence &amp; Report Flow</text>
+
+  <!-- Flow boxes -->
+  <rect x="50" y="524" width="120" height="38" fill="#dbeafe" stroke="#3b82f6" class="box"/>
+  <text x="110" y="547" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">Ingest sources</text>
+
+  <rect x="195" y="524" width="120" height="38" fill="#dbeafe" stroke="#3b82f6" class="box"/>
+  <text x="255" y="547" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">Retrieve passages</text>
+
+  <rect x="340" y="524" width="120" height="38" fill="#dbeafe" stroke="#3b82f6" class="box"/>
+  <text x="400" y="547" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">Gather evidence</text>
+
+  <rect x="485" y="524" width="120" height="38" fill="#dbeafe" stroke="#3b82f6" class="box"/>
+  <text x="545" y="547" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">Validate citations</text>
+
+  <rect x="630" y="524" width="140" height="38" fill="#bfdbfe" stroke="#2563eb" class="box"/>
+  <text x="700" y="547" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">Analytical brief</text>
+
+  <!-- Flow arrows -->
+  <line x1="170" y1="543" x2="191" y2="543" stroke="#3b82f6" class="edge-blue"/>
+  <line x1="315" y1="543" x2="336" y2="543" stroke="#3b82f6" class="edge-blue"/>
+  <line x1="460" y1="543" x2="481" y2="543" stroke="#3b82f6" class="edge-blue"/>
+  <line x1="605" y1="543" x2="626" y2="543" stroke="#3b82f6" class="edge-blue"/>
+
+  <!-- ── Ingestion detail ── -->
+  <text x="60" y="588" font-size="11" fill="#64748b">Ingestion: PDF · DOCX · XLSX · Images (OCR) · Audio (transcription) → extracted passages with source locations</text>
+  <text x="60" y="606" font-size="11" fill="#64748b">Retrieval: PostgreSQL full-text search · pgvector schema available · reciprocal rank fusion</text>
+</svg>
