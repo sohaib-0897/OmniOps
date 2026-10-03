@@ -67,7 +67,7 @@ def test_stdout_is_bounded():
 
 
 def test_memory_limit_contains_large_allocation():
-    result = _raw("x = bytearray(512 * 1024 * 1024)\nreturn len(x)", timeout=5)
+    result = _raw("x = bytearray(512 * 1024 * 1024)\nfor i in range(0, len(x), 4096):\n    x[i] = 1\nreturn x[0]", timeout=5)
     assert result.success is False
     assert result.resource_limit_hit or result.error_code in {"SANDBOX_MEMORY_LIMIT", "SANDBOX_INFRASTRUCTURE_ERROR"}
 
